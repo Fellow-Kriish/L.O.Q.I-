@@ -1,0 +1,44 @@
+# Hey Loki Wake Word Training Config
+model_name: hey_loki
+target_phrases:
+  - "hey loki"
+  - "hey lokey"
+  - "hey low key"
+
+n_samples: 5000
+n_samples_val: 500
+n_background_samples: 500
+n_background_samples_val: 50
+tts_batch_size: 25
+
+noise_scales: [0.98]
+noise_scale_ws: [0.98]
+length_scales: [0.75, 1.0, 1.25]
+slerp_weights: [0.2, 0.35, 0.5, 0.65, 0.8]
+
+custom_negative_phrases:
+  - "hey rocky"
+  - "hey lucky"
+  - "hey looky"
+  - "okay"
+  - "hey siri"
+  - "hey google"
+  - "alexa"
+  - "hey there"
+
+data_dir: "./wakeword_data"
+output_dir: "./wakeword_output"
+
+model:
+  model_type: conv_attention
+  model_size: small
+
+steps: 10000
+learning_rate: 0.0001
+target_fp_per_hour: 0.2
+
+augmentation:
+  clip_duration: 2.0
+  rounds: 1
+  background_paths: ["./wakeword_data/backgrounds"]
+  rir_paths: ["./wakeword_data/rirs"]

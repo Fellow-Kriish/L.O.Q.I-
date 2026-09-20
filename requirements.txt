@@ -1,0 +1,11 @@
+faster-whisper
+openwakeword
+kokoro
+soundfile
+groq
+pyaudio
+webrtcvad-wheels
+pywinauto
+python-dotenv
+sounddevice
+numpy
