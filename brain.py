@@ -154,7 +154,7 @@ class Brain:
                 # dicts are accepted at runtime. Cast is not worth the import weight.
                 return self.client.chat.completions.create(
                     model=model,
-                    messages=messages,  # type: ignore[arg-type]
+                    messages=messages,  # type: ignore[arg-type, unused-ignore]
                     stream=stream,
                     max_tokens=config.GROQ_MAX_TOKENS,
                     temperature=config.GROQ_TEMPERATURE,

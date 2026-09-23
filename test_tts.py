@@ -1,7 +1,7 @@
 """Quick automated test for TTS."""
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 from tts import TTS
 

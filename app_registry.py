@@ -63,7 +63,7 @@ def _load_apps_bg():
         # Run Get-StartApps and parse JSON
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", "Get-StartApps | ConvertTo-Json"],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+            capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         )
         if result.returncode == 0:
             apps = json.loads(result.stdout)

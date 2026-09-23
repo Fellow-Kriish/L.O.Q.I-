@@ -1,7 +1,7 @@
 """End-to-end test for the full pipeline in text mode — router → actions → confirm."""
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 from actions import execute
 from intents import route
@@ -43,6 +43,7 @@ for text, expected_handler, expected_success, response_check in tests:
         continue
 
     # Check confirm gate (all test cases are Tier 0/1 except close_app)
+    assert result is not None
     tier = result.intent.tier
     if tier > 1:
         print(f"  ⏭️  SKIP: \"{text}\" → Tier {tier} requires confirmation (interactive)")

@@ -40,7 +40,7 @@ class Recorder:
         self.min_speech_ms = min_speech_ms
 
         self.vad = webrtcvad.Vad(vad_aggressiveness)
-        self._pa = None
+        self._pa: pyaudio.PyAudio | None = None
         self._stream = None
 
     def _open_stream(self):
@@ -49,6 +49,7 @@ class Recorder:
             self._pa = pyaudio.PyAudio()
         mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
         try:
+            assert self._pa is not None
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -111,10 +112,11 @@ class Recorder:
         # Ring buffer: keep the last 300ms of pre-speech audio
         # so we don't clip the beginning of the utterance
         pre_speech_buffer_size = int(300 / self.chunk_ms)  # 10 frames at 30ms
-        pre_speech_buffer = collections.deque(maxlen=pre_speech_buffer_size)
+        pre_speech_buffer: collections.deque[bytes] = collections.deque(maxlen=pre_speech_buffer_size)
 
         try:
             while True:
+                assert self._stream is not None
                 chunk = self._stream.read(self.chunk_samples, exception_on_overflow=False)
                 total_frames += 1
 

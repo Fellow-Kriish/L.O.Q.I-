@@ -14,7 +14,7 @@ import os
 import sys
 import warnings
 
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 # Suppress noisy warnings from underlying ML libraries
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"

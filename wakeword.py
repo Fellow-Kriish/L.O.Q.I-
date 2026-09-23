@@ -9,6 +9,7 @@ Thread is never blocked by TTS playback or in-flight LLM calls.
 """
 
 import threading
+from typing import Callable
 
 import numpy as np
 import pyaudio
@@ -26,7 +27,7 @@ class WakeWordListener:
         threshold: float = config.WAKE_WORD_THRESHOLD,
         sample_rate: int = config.AUDIO_SAMPLE_RATE,
         chunk_samples: int = config.WAKE_WORD_CHUNK_SAMPLES,
-        on_detected: callable = None,
+        on_detected: Callable[..., None] | None = None,
     ):
         """
         Args:
@@ -43,7 +44,7 @@ class WakeWordListener:
         self.chunk_samples = chunk_samples
         self.on_detected = on_detected
 
-        self._thread = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._paused = threading.Event()
         self._paused.set()  # Start unpaused
@@ -61,6 +62,7 @@ class WakeWordListener:
         self._stop_event.clear()
         self._paused.set()
         self._thread = threading.Thread(target=self._listen_loop, daemon=True)
+        assert self._thread is not None
         self._thread.start()
         print("  👂 Wake word listener started.")
 

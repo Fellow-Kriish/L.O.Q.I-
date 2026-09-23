@@ -2,7 +2,7 @@
 import sys
 import time
 
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 from wakeword import WakeWordListener
 

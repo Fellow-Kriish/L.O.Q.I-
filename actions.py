@@ -101,7 +101,7 @@ def open_app(app_name: str = "", **kwargs) -> tuple[bool, str]:
             subprocess.Popen(cmd, shell=False)
         elif _is_protocol(cmd):
             # Protocol handler like "ms-settings:" or "whatsapp:"
-            os.startfile(cmd)
+            os.startfile(cmd)  # type: ignore[attr-defined, unused-ignore]
         else:
             subprocess.Popen(cmd, shell=False)
         return True, f"Opening {app_name}."
@@ -166,7 +166,7 @@ def play_music(**kwargs) -> tuple[bool, str]:
 
     # Fallback: try opening the Windows default music app
     try:
-        os.startfile("mswindowsmusic:")
+        os.startfile("mswindowsmusic:")  # type: ignore[attr-defined, unused-ignore]
         return True, "Opening your music app."
     except Exception:
         return False, "I couldn't find a music app to open."
