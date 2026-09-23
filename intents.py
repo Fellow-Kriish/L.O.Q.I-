@@ -15,9 +15,10 @@ Patterns are matched against the WHOLE normalized utterance, never a
 substring — see _p() for why.
 """
 
+import contextlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 
 @dataclass
@@ -27,7 +28,7 @@ class Intent:
     patterns: list[re.Pattern]
     tier: int                       # 0, 1, 2, 3
     handler: str                    # action function name in actions.py
-    extract: Callable = None        # (match) -> dict of extracted args
+    extract: Callable | None = None  # (match) -> dict of extracted args
 
 
 @dataclass
@@ -63,10 +64,8 @@ def _extract_url(match: re.Match) -> dict:
 def _extract_contact_and_message(match: re.Match) -> dict:
     """Pull contact name and message text."""
     result = {"contact": match.group("contact").strip()}
-    try:
+    with contextlib.suppress(IndexError):
         result["message"] = match.group("message").strip()
-    except IndexError:
-        pass
     return result
 
 
@@ -261,7 +260,7 @@ def normalize(text: str) -> str:
     return text
 
 
-def route(text: str) -> Optional[MatchResult]:
+def route(text: str) -> MatchResult | None:
     """
     Match text against all intents. Returns MatchResult on first hit, None on miss.
     Cost: microseconds — don't worry about pattern count.
@@ -276,9 +275,7 @@ def route(text: str) -> Optional[MatchResult]:
             if match:
                 args = {}
                 if intent.extract:
-                    try:
+                    with contextlib.suppress(IndexError, AttributeError):
                         args = intent.extract(match)
-                    except (IndexError, AttributeError):
-                        pass
                 return MatchResult(intent=intent, args=args, raw_text=text)
     return None

@@ -1,10 +1,10 @@
 """End-to-end test for the full pipeline in text mode — router → actions → confirm."""
 import sys
+
 sys.stdout.reconfigure(encoding="utf-8")
 
-from intents import route
 from actions import execute
-from confirm import confirm_action
+from intents import route
 
 tests = [
     # (input_text, expected_handler, expected_success, check_response_contains)

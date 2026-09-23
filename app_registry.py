@@ -2,16 +2,18 @@
 LOQI — App Registry
 
 Mapping of friendly app names → executable paths / commands.
-Extend this dict with your own apps. Names are matched case-insensitively.
-
-If a value is just a bare name (e.g. "notepad.exe"), it's assumed to be
-on the system PATH. Otherwise, provide the full absolute path.
+Extends the dict dynamically by querying Windows StartApps.
 """
 
-# fmt: off
+import difflib
+import json
+import subprocess
+import threading
+
+# Hardcoded overrides (for things like "settings", "cmd", etc that UWP/StartMenu don't handle easily,
+# or custom portable apps).
 APPS: dict[str, str] = {
     # --- Windows built-ins ---
-    "notepad":          "notepad.exe",
     "calculator":       "calc.exe",
     "calc":             "calc.exe",
     "file explorer":    "explorer.exe",
@@ -52,17 +54,62 @@ APPS: dict[str, str] = {
     # --- Gaming ---
     "steam":            r"C:\Program Files (x86)\Steam\steam.exe",
 }
-# fmt: on
 
+_DYNAMIC_APPS: dict[str, str] = {}
+_APPS_LOADED = threading.Event()
+
+def _load_apps_bg():
+    try:
+        # Run Get-StartApps and parse JSON
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-StartApps | ConvertTo-Json"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        if result.returncode == 0:
+            apps = json.loads(result.stdout)
+            for app in apps:
+                name = app.get("Name", "")
+                appid = app.get("AppID", "")
+                if name and appid:
+                    _DYNAMIC_APPS[name.lower()] = appid
+    except Exception as e:
+        print(f"Warning: Failed to load dynamic apps list: {e}")
+    finally:
+        _APPS_LOADED.set()
+
+# Start background load immediately when module is imported
+threading.Thread(target=_load_apps_bg, daemon=True).start()
 
 def lookup(name: str) -> str | None:
     """
     Look up an app by friendly name. Case-insensitive.
     Returns the command/path string, or None if not found.
     """
-    return APPS.get(name.lower().strip())
+    name_lower = name.lower().strip()
 
+    # 1. Check hardcoded static overrides first
+    if name_lower in APPS:
+        return APPS[name_lower]
+
+    # 2. Ensure dynamic apps are loaded
+    # Use a small timeout so we don't freeze indefinitely if powershell hangs
+    _APPS_LOADED.wait(timeout=2.0)
+
+    # 3. Check exact match in dynamic apps
+    if name_lower in _DYNAMIC_APPS:
+        return f'explorer.exe shell:AppsFolder\\{_DYNAMIC_APPS[name_lower]}'
+
+    # 4. Fuzzy match if exact match fails
+    if _DYNAMIC_APPS:
+        matches = difflib.get_close_matches(name_lower, _DYNAMIC_APPS.keys(), n=1, cutoff=0.7)
+        if matches:
+            best_match = matches[0]
+            return f'explorer.exe shell:AppsFolder\\{_DYNAMIC_APPS[best_match]}'
+
+    return None
 
 def list_apps() -> list[str]:
     """Return sorted list of known app names."""
-    return sorted(set(APPS.keys()))
+    _APPS_LOADED.wait(timeout=2.0)
+    all_apps = set(APPS.keys()) | set(_DYNAMIC_APPS.keys())
+    return sorted(all_apps)

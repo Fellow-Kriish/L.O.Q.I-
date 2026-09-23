@@ -9,9 +9,9 @@ Thread is never blocked by TTS playback or in-flight LLM calls.
 """
 
 import threading
+
 import numpy as np
 import pyaudio
-
 from openwakeword.model import Model as OWWModel
 
 import config
@@ -51,7 +51,7 @@ class WakeWordListener:
         # Load model
         print(f"  Loading wake word model ({model_path})...")
         self.oww_model = OWWModel(wakeword_models=[model_path], inference_framework='onnx')
-        print(f"  ✅ Wake word model loaded.")
+        print("  ✅ Wake word model loaded.")
 
     def start(self):
         """Start the listener thread."""
@@ -79,34 +79,71 @@ class WakeWordListener:
 
     def resume(self):
         """Resume listening after pause."""
-        self._paused.set()
         # Reset model predictions to avoid false triggers from residual audio
         self.oww_model.reset()
+        self._paused.set()
 
     def _listen_loop(self):
         """Main listener loop — runs on its own thread."""
         pa = pyaudio.PyAudio()
+        stream = None
+
+        def _open_stream():
+            mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
+            try:
+                return pa.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=self.sample_rate,
+                    input=True,
+                    input_device_index=mic_idx,
+                    frames_per_buffer=self.chunk_samples,
+                )
+            except Exception as e:
+                if mic_idx is not None:
+                    print(f"  ⚠️  Failed to open mic index {mic_idx}. Falling back to default.")
+                    return pa.open(
+                        format=pyaudio.paInt16,
+                        channels=1,
+                        rate=self.sample_rate,
+                        input=True,
+                        input_device_index=None,
+                        frames_per_buffer=self.chunk_samples,
+                    )
+                raise e
 
         try:
-            mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
-            stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.sample_rate,
-                input=True,
-                input_device_index=mic_idx,
-                frames_per_buffer=self.chunk_samples,
-            )
+            stream = _open_stream()
 
             while not self._stop_event.is_set():
-                # Block here if paused
-                self._paused.wait()
+                if not self._paused.is_set():
+                    # Close the PyAudio stream to prevent buffer buildup and host errors
+                    if stream:
+                        try:
+                            stream.stop_stream()
+                            stream.close()
+                        except Exception:
+                            pass
+                        stream = None
 
-                if self._stop_event.is_set():
-                    break
+                    # Block until resumed
+                    self._paused.wait()
+
+                    if self._stop_event.is_set():
+                        break
+
+                    # Resumed: reopen the stream
+                    try:
+                        stream = _open_stream()
+                    except Exception as e:
+                        print(f"  ❌ Failed to reopen mic stream: {e}")
+                        break
 
                 try:
-                    chunk_bytes = stream.read(self.chunk_samples, exception_on_overflow=False)
+                    if stream:
+                        chunk_bytes = stream.read(self.chunk_samples, exception_on_overflow=False)
+                    else:
+                        continue
                 except OSError:
                     continue
 
@@ -130,11 +167,12 @@ class WakeWordListener:
         except Exception as e:
             print(f"  ❌ Wake word listener error: {e}")
         finally:
-            try:
-                stream.stop_stream()
-                stream.close()
-            except Exception:
-                pass
+            if stream:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
             pa.terminate()
 
     @property

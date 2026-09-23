@@ -10,9 +10,10 @@ Usage:
     python main.py --no-wake    # Voice mode but no wake word (press Enter to speak)
 """
 
-import sys
 import os
+import sys
 import warnings
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 # Suppress noisy warnings from underlying ML libraries
@@ -21,13 +22,13 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", module="huggingface_hub")
 
-import threading
 import argparse
+import threading
 
-from intents import route
 from actions import execute
 from confirm import confirm_action
 from fallback_log import log_fallback
+from intents import route
 
 
 def main():
@@ -107,7 +108,7 @@ def main():
                 print(f"  📝 You said: \"{text}\"")
 
                 # Process
-                _process_command(text, speak, brain)
+                _process_command(text, speak, brain, recorder=recorder, stt=stt)
 
             except KeyboardInterrupt:
                 print("\n  Goodbye!")
@@ -163,7 +164,7 @@ def main():
                 print(f"  📝 You said: \"{text}\"")
 
                 # Process command
-                _process_command(text, speak, brain)
+                _process_command(text, speak, brain, recorder=recorder, stt=stt)
 
                 # Resume wake word listening
                 wake_listener.resume()
@@ -175,7 +176,7 @@ def main():
             print("  Goodbye!")
 
 
-def _process_command(text: str, speak_fn, brain):
+def _process_command(text: str, speak_fn, brain, recorder=None, stt=None):
     """
     Route text through intent router → action/confirm → execute.
     Falls back to Groq LLM if no intent matches.
@@ -188,13 +189,15 @@ def _process_command(text: str, speak_fn, brain):
         print(f"  ✅ Intent: {intent.name} (Tier {intent.tier})")
 
         # Build action description for confirm gate
-        if result.args:
-            action_desc = f"{intent.name}: {result.args}"
-        else:
-            action_desc = intent.name
+        action_desc = f"{intent.name}: {result.args}" if result.args else intent.name
 
         # Check permission tier
-        if not confirm_action(intent.tier, action_desc, tts_fn=speak_fn):
+        if not confirm_action(
+            intent.tier, action_desc,
+            tts_fn=speak_fn,
+            recorder_fn=recorder.record if recorder else None,
+            stt_fn=stt.transcribe if stt else None,
+        ):
             speak_fn("Okay, cancelled.")
             return
 
@@ -205,11 +208,11 @@ def _process_command(text: str, speak_fn, brain):
 
     else:
         # --- No match → Groq LLM fallback ---
-        print(f"  🧠 No intent match → Groq fallback")
+        print("  🧠 No intent match → Groq fallback")
 
         # Stream response, speak sentence-by-sentence
         full_response = ""
-        for sentence in brain.ask(text, stream=True):
+        for sentence in brain.ask_stream(text):
             print(f"  💬 {sentence}")
             speak_fn(sentence)
             full_response += sentence + " "

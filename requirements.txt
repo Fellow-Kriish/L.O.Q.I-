@@ -1,11 +1,40 @@
-faster-whisper
-openwakeword
-kokoro
-soundfile
-groq
-pyaudio
-webrtcvad-wheels
-pywinauto
-python-dotenv
-sounddevice
-numpy
+# L.O.Q.I. runtime dependencies — pinned for reproducible installs.
+#
+# GPU note: faster-whisper uses CTranslate2 and Kokoro uses PyTorch. The CPU
+# wheels install by default. For CUDA acceleration (recommended — see README),
+# install the matching CUDA build of torch from https://pytorch.org and make
+# sure cuDNN 9 is on PATH. CTranslate2/torch versions are intentionally NOT
+# pinned here because the right build is machine-specific; capture your exact
+# working set with `pip freeze > requirements.lock` for full reproducibility.
+
+# --- Speech-to-text ---
+faster-whisper==1.2.1
+
+# --- Wake word ---
+openwakeword==0.6.0
+
+# --- Text-to-speech ---
+kokoro==0.9.4
+
+# --- Audio I/O ---
+sounddevice==0.5.6
+soundfile==0.14.0
+PyAudio==0.2.14
+webrtcvad-wheels==2.0.14
+
+# --- Cloud LLM fallback ---
+groq==1.7.0
+
+# --- Intent router: fuzzy middle tier ---
+rapidfuzz==3.14.6
+
+# --- Windows app automation ---
+pywinauto==0.6.9
+
+# --- Config & environment ---
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+
+# --- Numerics ---
+numpy==2.4.6

@@ -1,19 +1,46 @@
 """
 LOQI — Groq LLM Fallback (Cloud Brain)
 
-Streaming chat completion with Groq's LPU inference.
-Used ONLY when the local intent router has no match — open-ended questions,
-drafting text, explaining concepts, etc.
+Chat completion via Groq's LPU inference. Used ONLY when the local intent router
+has no match — open-ended questions, drafting text, explaining concepts, etc.
 
-Critical rule: LLM output is DATA, not AUTHORITY. Any action-shaped output
-routes through confirm.py's gate, never executes directly.
+Two public entry points:
+    * ``ask(text) -> str``            — full response, for text mode / logging.
+    * ``ask_stream(text) -> Iterator[str]`` — sentences as they stream in, so TTS
+      can start speaking sentence 1 while sentence 2 is still generating.
+
+Reliability: the Groq SDK retries transient errors (429 / 5xx / connection) with
+backoff internally (honoring Retry-After); on top of that we fail over from the
+primary model to the backup model and never raise into the caller — a spoken
+assistant must always say *something*.
+
+Critical rule: LLM output is DATA, not AUTHORITY. Any action-shaped output routes
+through confirm.py's gate, never executes directly.
 """
 
+from __future__ import annotations
+
 import re
-from groq import Groq
+from collections.abc import Iterator
+
+from groq import (
+    APIConnectionError,
+    APIStatusError,
+    AuthenticationError,
+    Groq,
+    RateLimitError,
+)
 
 import config
-from tts import split_sentences
+from logging_setup import get_logger
+
+log = get_logger(__name__)
+
+# Sentence boundary: punctuation followed by whitespace. Compiled once.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+_NO_KEY_MSG = "I can't reach the cloud right now. My API key isn't set up yet."
+_ERROR_MSG = "Sorry, I couldn't reach the cloud right now. Try again in a moment."
 
 
 class Brain:
@@ -24,146 +51,133 @@ class Brain:
         api_key: str = config.GROQ_API_KEY,
         model: str = config.GROQ_MODEL,
         backup_model: str = config.GROQ_BACKUP_MODEL,
+        max_retries: int = config.GROQ_MAX_RETRIES,
     ):
         if not api_key:
-            print("  ⚠️  No GROQ_API_KEY set. Cloud fallback will fail.")
-            print("     Get a free key at https://console.groq.com/keys")
-            print("     Add it to your .env file: GROQ_API_KEY=your_key_here")
+            log.warning(
+                "No GROQ_API_KEY set — cloud fallback will fail. Get a free key at "
+                "https://console.groq.com/keys and add GROQ_API_KEY=... to your .env file."
+            )
 
-        self.client = Groq(api_key=api_key) if api_key else None
+        # max_retries drives the SDK's own transient-error backoff.
+        self.client = Groq(api_key=api_key, max_retries=max_retries) if api_key else None
         self.model = model
         self.backup_model = backup_model
 
-        # Conversation history (last N turns)
-        self.history: list[dict] = []
+        # Conversation history (last N turns).
+        self.history: list[dict[str, str]] = []
         self.max_history = config.GROQ_HISTORY_LENGTH
 
-    def ask(self, text: str, stream: bool = True):
-        """
-        Send a query to Groq and return the response.
-
-        Args:
-            text: User's transcribed utterance.
-            stream: If True, returns a generator yielding sentences as they
-                    become available. If False, returns the full response string.
-
-        Returns:
-            If stream=True: generator of sentence strings.
-            If stream=False: full response string.
-        """
+    # ------------------------------------------------------------------ public
+    def ask(self, text: str) -> str:
+        """Return the full response as a string. Never raises."""
         if not self.client:
-            if stream:
-                yield "I can't reach the cloud right now. My API key isn't set up yet."
-                return
-            else:
-                return "I can't reach the cloud right now. My API key isn't set up yet."
+            return _NO_KEY_MSG
 
-        # Add user message to history
-        self.history.append({"role": "user", "content": text})
+        messages = self._prepare(text)
+        completion = self._create(messages, stream=False)
+        if completion is None:
+            return _ERROR_MSG
 
-        # Trim history to max length
-        if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history:]
+        content = (completion.choices[0].message.content or "").strip()
+        self.history.append({"role": "assistant", "content": content})
+        return content
 
-        messages = [
-            {"role": "system", "content": config.GROQ_SYSTEM_PROMPT},
-            *self.history,
-        ]
+    def ask_stream(self, text: str) -> Iterator[str]:
+        """Yield complete sentences as they stream in. Never raises."""
+        if not self.client:
+            yield _NO_KEY_MSG
+            return
 
-        if stream:
-            yield from self._stream_response(messages)
-        else:
-            return self._full_response(messages)
-
-    def _stream_response(self, messages: list[dict]):
-        """
-        Stream tokens from Groq, yield complete sentences as they form.
-
-        This is the key latency optimization: TTS can start speaking sentence 1
-        while sentence 2 is still being generated.
-        """
-        try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=True,
-                max_tokens=config.GROQ_MAX_TOKENS,
-                temperature=config.GROQ_TEMPERATURE,
-            )
-        except Exception as e:
-            # Try backup model
-            try:
-                stream = self.client.chat.completions.create(
-                    model=self.backup_model,
-                    messages=messages,
-                    stream=True,
-                    max_tokens=config.GROQ_MAX_TOKENS,
-                    temperature=config.GROQ_TEMPERATURE,
-                )
-            except Exception as e2:
-                yield f"Sorry, I couldn't reach the cloud. Error: {e2}"
-                return
+        messages = self._prepare(text)
+        stream = self._create(messages, stream=True)
+        if stream is None:
+            yield _ERROR_MSG
+            return
 
         buffer = ""
         full_response = ""
-
-        for chunk in stream:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                token = delta.content
+        try:
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                token = getattr(delta, "content", None)
+                if not token:
+                    continue
                 buffer += token
                 full_response += token
 
-                # Check if buffer contains a complete sentence
-                # Split on sentence-ending punctuation followed by space or end
-                sentences = re.split(r'(?<=[.!?])\s+', buffer)
-
+                # Emit every complete sentence, keep the trailing fragment.
+                sentences = _SENTENCE_SPLIT.split(buffer)
                 if len(sentences) > 1:
-                    # Yield all complete sentences (everything except the last fragment)
                     for sentence in sentences[:-1]:
                         sentence = sentence.strip()
                         if sentence:
                             yield sentence
-
-                    # Keep the incomplete last part in the buffer
                     buffer = sentences[-1]
+        except (APIStatusError, APIConnectionError) as e:
+            log.error("Groq stream interrupted mid-response: %s", e)
+            if not full_response:
+                yield _ERROR_MSG
+                return
 
-        # Yield any remaining text in the buffer
         if buffer.strip():
             yield buffer.strip()
 
-        # Save assistant response to history
         self.history.append({"role": "assistant", "content": full_response})
 
-    def _full_response(self, messages: list[dict]) -> str:
-        """Get a complete (non-streamed) response."""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=False,
-                max_tokens=config.GROQ_MAX_TOKENS,
-                temperature=config.GROQ_TEMPERATURE,
-            )
-            content = response.choices[0].message.content or ""
-        except Exception:
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.backup_model,
-                    messages=messages,
-                    stream=False,
-                    max_tokens=config.GROQ_MAX_TOKENS,
-                    temperature=config.GROQ_TEMPERATURE,
-                )
-                content = response.choices[0].message.content or ""
-            except Exception as e:
-                content = f"Sorry, I couldn't reach the cloud. Error: {e}"
-
-        # Save to history
-        self.history.append({"role": "assistant", "content": content})
-        return content
-
-    def clear_history(self):
+    def clear_history(self) -> None:
         """Clear conversation history."""
         self.history.clear()
 
+    # --------------------------------------------------------------- internals
+    def _prepare(self, text: str) -> list[dict[str, str]]:
+        """Append the user turn, trim history, and build the messages list."""
+        self.history.append({"role": "user", "content": text})
+        if len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history :]
+        return [{"role": "system", "content": config.GROQ_SYSTEM_PROMPT}, *self.history]
+
+    def _create(self, messages: list[dict[str, str]], stream: bool):
+        """
+        Call Groq, trying the primary model then the backup. Returns the SDK
+        response (a completion or a stream), or None if both models fail.
+
+        The SDK already retried transient errors before raising; our job here is
+        to decide when failing over to the backup model is worthwhile.
+        """
+        assert self.client is not None  # guarded by callers
+        last_error: Exception | None = None
+
+        for model in (self.model, self.backup_model):
+            try:
+                # The SDK's type stub wants a union of TypedDicts; plain role/content
+                # dicts are accepted at runtime. Cast is not worth the import weight.
+                return self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,  # type: ignore[arg-type]
+                    stream=stream,
+                    max_tokens=config.GROQ_MAX_TOKENS,
+                    temperature=config.GROQ_TEMPERATURE,
+                )
+            except AuthenticationError as e:
+                # Both models use the same key — failover cannot help. Stop.
+                log.error("Groq authentication failed: %s", e)
+                return None
+            except RateLimitError as e:
+                last_error = e
+                log.warning("Groq rate-limited on %s (after retries); trying backup.", model)
+            except APIStatusError as e:
+                last_error = e
+                log.warning(
+                    "Groq API error %s on %s: %s; trying backup.",
+                    getattr(e, "status_code", "?"), model, e,
+                )
+            except APIConnectionError as e:
+                last_error = e
+                log.warning("Groq connection error on %s: %s; trying backup.", model, e)
+            except Exception as e:  # noqa: BLE001 — must never crash the assistant
+                last_error = e
+                log.warning("Unexpected Groq error on %s: %s; trying backup.", model, e)
+
+        log.error("Groq request failed on both primary and backup models: %s", last_error)
+        return None

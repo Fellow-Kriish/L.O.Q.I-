@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# L.O.Q.I. — project metadata + tooling config.
+#
+# This project runs as a flat set of modules (`python main.py`), so it is not
+# packaged/installed as a wheel; there is intentionally no [build-system] here.
+# Runtime deps live in requirements.txt, dev deps in requirements-dev.txt.
+# Ruff / mypy / pytest read their [tool.*] sections below.
+# ---------------------------------------------------------------------------
+[project]
+name = "loqi"
+version = "0.1.0"
+description = "L.O.Q.I. — Local Operations & Query Interface: a local-first voice assistant with a deterministic intent router and a Groq cloud LLM fallback."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# ---------------------------------------------------------------------------
+# Ruff — linter + formatter
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["venv", "deprecated_files", "wakeword_data", "wakeword_output"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, UP pyupgrade, B bugbear, SIM simplify,
+# C4 comprehensions. Kept pragmatic — this is a working v0.1, not a greenfield.
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "E501",  # line length is enforced by the formatter, not the linter
+    "B008",  # function calls in argument defaults (config.X defaults are intentional)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]   # tests tweak sys.path/stdout before imports
+"test_*.py" = ["E402"] # root-level interactive hardware smoke scripts (manual)
+# main.py / tts.py configure warnings + env vars BEFORE importing heavy ML
+# libraries on purpose; that ordering is intentional, not an import mistake.
+"main.py" = ["E402"]
+"tts.py" = ["E402"]
+
+# ---------------------------------------------------------------------------
+# mypy — type checking (pragmatic: the ML libs ship no stubs)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["venv/", "deprecated_files/", "wakeword_data/", "wakeword_output/"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "audio: needs a microphone/speaker (skipped in CI)",
+    "model: loads a heavy ML model (skipped in CI)",
+    "network: reaches the Groq API (skipped in CI)",
+]

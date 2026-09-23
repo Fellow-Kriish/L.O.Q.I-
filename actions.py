@@ -7,12 +7,25 @@ The response_text is what TTS will speak.
 All actions are deterministic — no vision model, no LLM, just direct OS calls.
 """
 
-import webbrowser
+import os
+import re
 import subprocess
 import urllib.parse
-from datetime import datetime, date
+import webbrowser
+from collections.abc import Callable
+from datetime import date, datetime
 
 from app_registry import lookup
+
+# A URI/protocol launcher (ms-settings:, whatsapp:, mswindowsmusic:) vs a file
+# path. Requires 2+ scheme chars before ':', so a Windows drive like "C:\..."
+# never matches (single letter + ':').
+_URI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]+:")
+
+
+def _is_protocol(cmd: str) -> bool:
+    """True if ``cmd`` is a URI/protocol handler rather than an executable path."""
+    return _URI_SCHEME.match(cmd) is not None
 
 
 def tell_name(**kwargs) -> tuple[bool, str]:
@@ -84,11 +97,10 @@ def open_app(app_name: str = "", **kwargs) -> tuple[bool, str]:
         return False, f"I don't know how to open {app_name}. You can add it to the app registry."
 
     try:
-        # Use shell=True for protocol handlers (e.g. "ms-settings:") and
-        # commands with arguments. Otherwise subprocess.Popen works fine.
-        if ":" in cmd and not cmd[1] == ":":
+        if cmd.startswith("explorer.exe "):
+            subprocess.Popen(cmd, shell=False)
+        elif _is_protocol(cmd):
             # Protocol handler like "ms-settings:" or "whatsapp:"
-            import os
             os.startfile(cmd)
         else:
             subprocess.Popen(cmd, shell=False)
@@ -154,7 +166,6 @@ def play_music(**kwargs) -> tuple[bool, str]:
 
     # Fallback: try opening the Windows default music app
     try:
-        import os
         os.startfile("mswindowsmusic:")
         return True, "Opening your music app."
     except Exception:
@@ -164,7 +175,7 @@ def play_music(**kwargs) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Action dispatcher — maps handler names to functions
 # ---------------------------------------------------------------------------
-ACTION_MAP: dict[str, callable] = {
+ACTION_MAP: dict[str, Callable[..., tuple[bool, str]]] = {
     "tell_name": tell_name,
     "tell_time": tell_time,
     "tell_date": tell_date,

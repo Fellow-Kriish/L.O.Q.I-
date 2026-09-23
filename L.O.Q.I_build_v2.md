@@ -1,5 +1,5 @@
-# Jarvis Build Doc v2 — Local Voice Assistant + Supervised PC Control
-_Updated with Sept 2026 research. Supersedes jarvis_built.md section 0/2/3 numbers._
+# L.O.Q.I. Build Doc v2 — Local Voice Assistant + Supervised PC Control
+_Updated with Sept 2026 research. Supersedes the v1 build doc's section 0/2/3 numbers._
 
 ## 0. Reality Check — Updated
 

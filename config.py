@@ -1,12 +1,27 @@
 """
 LOQI — Central Configuration
 
-All tunable settings in one place. Env vars loaded from .env file.
+Typed, validated settings via pydantic-settings. Every value can be overridden
+by an environment variable (prefix ``LOQI_``) or the ``.env`` file, e.g.::
+
+    LOQI_STT_DEVICE=cpu
+    LOQI_WAKE_WORD_THRESHOLD=0.6
+    LOQI_MIC_DEVICE_INDEX=15
+
+Backward compatibility: this module also re-exports every setting as an
+UPPERCASE module-level constant (``AUDIO_SAMPLE_RATE``, ``GROQ_MODEL``, ...) so
+existing ``import config; config.AUDIO_SAMPLE_RATE`` call sites keep working
+unchanged. New code may instead use ``config.settings.audio_sample_rate``.
 """
 
-import os
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Literal
+
 from dotenv import load_dotenv
+from pydantic import AliasChoices, Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -15,58 +30,99 @@ PROJECT_ROOT = Path(__file__).parent
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Load .env from project root (if it exists)
+# Populate os.environ from .env too, so any library that reads the environment
+# directly (not just this Settings model) still sees the values.
 load_dotenv(PROJECT_ROOT / ".env")
 
-# ---------------------------------------------------------------------------
-# Audio
-# ---------------------------------------------------------------------------
-AUDIO_SAMPLE_RATE = 16000       # Hz — required by faster-whisper & openWakeWord
-AUDIO_CHANNELS = 1              # mono
-AUDIO_SAMPLE_WIDTH = 2          # 16-bit = 2 bytes
-AUDIO_CHUNK_MS = 30             # ms per VAD frame (10, 20, or 30)
-AUDIO_CHUNK_SAMPLES = int(AUDIO_SAMPLE_RATE * AUDIO_CHUNK_MS / 1000)  # 480
-AUDIO_CHUNK_BYTES = AUDIO_CHUNK_SAMPLES * AUDIO_SAMPLE_WIDTH          # 960
-MIC_DEVICE_INDEX = 15             # Nirvana Ion headset at 16kHz (None = system default)
+
+class Settings(BaseSettings):
+    """All tunable settings, validated at load time."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LOQI_",
+        env_file=str(PROJECT_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        protected_namespaces=(),
+    )
+
+    # -- Audio ---------------------------------------------------------------
+    audio_sample_rate: int = 16000          # Hz — required by faster-whisper & openWakeWord
+    audio_channels: int = 1                 # mono
+    audio_sample_width: int = 2             # 16-bit = 2 bytes
+    audio_chunk_ms: Literal[10, 20, 30] = 30  # ms per VAD frame
+    # Mic selection, resolved by audio_devices.resolve_mic_index():
+    #   explicit index (if set) → name substring match → system default.
+    # Pin per-machine via LOQI_MIC_DEVICE_INDEX or LOQI_MIC_DEVICE_NAME.
+    mic_device_index: int | None = None
+    mic_device_name: str | None = None   # substring match against device names
+
+    # -- VAD (Voice Activity Detection) --------------------------------------
+    vad_aggressiveness: int = Field(3, ge=0, le=3)   # 0 (least) to 3 (most)
+    vad_silence_timeout_ms: int = 1000               # stop after this much silence
+    vad_min_speech_ms: int = 300                     # min speech before accepting
+    vad_wake_timeout_ms: int = 8000                  # max wait for speech onset post-wake
+    vad_confirm_timeout_ms: int = 5000               # shorter timeout for yes/no confirm
+
+    # -- STT (faster-whisper) ------------------------------------------------
+    # Defaults target a CUDA GPU when present, with automatic CPU fallback in
+    # stt.py. device "auto" picks cuda if available else cpu; compute_type is
+    # coerced to int8 on the CPU path (float16 is GPU-only).
+    stt_model_size: str = "small.en"                 # english-only, more accurate than "base"
+    stt_device: Literal["cpu", "cuda", "auto"] = "auto"
+    stt_compute_type: str = "float16"                # gpu: float16; cpu coerces to int8
+    # Domain vocabulary fed to the decoder to bias spelling of the assistant's
+    # name and common app names (fixes "Loki"/"Loqi" and app mis-hearings).
+    stt_initial_prompt: str = (
+        "Voice commands for Loki, a personal assistant. Open Notepad, Chrome, "
+        "Firefox, Edge, Spotify, Discord, VLC, Steam, Word, Excel. Play music, "
+        "search YouTube and Google."
+    )
+
+    # -- TTS (Kokoro) --------------------------------------------------------
+    tts_lang_code: str = "a"                         # "a" = American English
+    tts_voice: str = "af_heart"                      # see Kokoro VOICES.md
+    tts_sample_rate: int = 24000                     # Kokoro outputs 24kHz
+
+    # -- Wake word (openWakeWord) --------------------------------------------
+    wake_word_model: str = "hey_loki.onnx"
+    wake_word_threshold: float = Field(0.5, ge=0.0, le=1.0)
+    wake_word_chunk_samples: int = 1280              # 80ms at 16kHz
+
+    # -- Groq (cloud LLM fallback) -------------------------------------------
+    # GROQ_API_KEY is read WITHOUT the LOQI_ prefix (it's the conventional name).
+    groq_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GROQ_API_KEY", "LOQI_GROQ_API_KEY"),
+    )
+    # Both are Groq *Production* models (Preview models must not be used here).
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_backup_model: str = "openai/gpt-oss-20b"
+    groq_max_tokens: int = 1024
+    # 0.4: assistant answers should be consistent and grounded, not creative.
+    groq_temperature: float = Field(0.4, ge=0.0, le=2.0)
+    groq_history_length: int = 10
+    groq_max_retries: int = Field(2, ge=0)   # transient-error retries per model
+
+    # -- Derived (computed) --------------------------------------------------
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def audio_chunk_samples(self) -> int:
+        return int(self.audio_sample_rate * self.audio_chunk_ms / 1000)  # 480
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def audio_chunk_bytes(self) -> int:
+        return self.audio_chunk_samples * self.audio_sample_width  # 960
+
+
+settings = Settings()
+
 
 # ---------------------------------------------------------------------------
-# VAD (Voice Activity Detection)
+# System prompt — short, direct, no markdown in responses (TTS can't read it).
+# Kept as a module constant (not env-overridable — it's not a knob you tune).
 # ---------------------------------------------------------------------------
-VAD_AGGRESSIVENESS = 3          # 0 (least) to 3 (most aggressive)
-VAD_SILENCE_TIMEOUT_MS = 1000   # stop recording after this much silence
-VAD_MIN_SPEECH_MS = 300         # minimum speech duration before accepting
-
-# ---------------------------------------------------------------------------
-# STT (Speech-to-Text) — faster-whisper
-# ---------------------------------------------------------------------------
-STT_MODEL_SIZE = "base"         # "tiny" or "base" — both fast on CPU
-STT_DEVICE = "cpu"              # "cpu" or "cuda"
-STT_COMPUTE_TYPE = "int8"       # "int8" for low memory, "float16" for GPU
-
-# ---------------------------------------------------------------------------
-# TTS (Text-to-Speech) — Kokoro
-# ---------------------------------------------------------------------------
-TTS_LANG_CODE = "a"             # "a" = American English
-TTS_VOICE = "af_heart"          # see Kokoro VOICES.md for options
-TTS_SAMPLE_RATE = 24000         # Kokoro outputs 24kHz audio
-
-# ---------------------------------------------------------------------------
-# Wake Word — openWakeWord
-# ---------------------------------------------------------------------------
-WAKE_WORD_MODEL = "hey_loki.onnx" # Custom trained model
-WAKE_WORD_THRESHOLD = 0.5       # lowered for better real-world detection       # detection confidence threshold
-WAKE_WORD_CHUNK_SAMPLES = 1280  # 80ms at 16kHz — required by openWakeWord
-
-# ---------------------------------------------------------------------------
-# Groq (Cloud LLM Fallback)
-# ---------------------------------------------------------------------------
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = "qwen/qwen3.8-27b"
-GROQ_BACKUP_MODEL = "openai/gpt-oss-20b"
-GROQ_MAX_TOKENS = 1024
-GROQ_TEMPERATURE = 0.7
-
-# System prompt — short, direct, no markdown in responses (TTS can't read it)
 GROQ_SYSTEM_PROMPT = """You are L.O.Q.I. — Local Operations & Query Interface (pronounced "Loki").
 
 # IDENTITY
@@ -116,19 +172,46 @@ You may be given a short rolling history of the last few exchanges for context o
 # WHEN IN DOUBT
 Prioritize, in this order: don't claim to have done something you haven't, don't invent facts, keep it short enough to comfortably listen to, sound like a person not a script."""
 
-# Conversation history — how many past turns to keep for context
-GROQ_HISTORY_LENGTH = 10
 
 # ---------------------------------------------------------------------------
-# Permission Tiers (from jarvis_build_v2.md section 4)
+# Backward-compatible UPPERCASE aliases.
+# Existing modules do `import config; config.AUDIO_SAMPLE_RATE` — keep those
+# working by mirroring every setting here. New code can use `config.settings`.
 # ---------------------------------------------------------------------------
-# Tier 0: read-only/local          → no confirmation
-# Tier 1: reversible action        → no confirmation
-# Tier 2: sends/writes             → spoken confirm required
-# Tier 3: destructive/irreversible → spoken confirm + repeat-back
-# "never": unreviewed external content as command → always surface, never auto-execute
+AUDIO_SAMPLE_RATE = settings.audio_sample_rate
+AUDIO_CHANNELS = settings.audio_channels
+AUDIO_SAMPLE_WIDTH = settings.audio_sample_width
+AUDIO_CHUNK_MS = settings.audio_chunk_ms
+AUDIO_CHUNK_SAMPLES = settings.audio_chunk_samples
+AUDIO_CHUNK_BYTES = settings.audio_chunk_bytes
+MIC_DEVICE_INDEX = settings.mic_device_index
+MIC_DEVICE_NAME = settings.mic_device_name
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
+VAD_AGGRESSIVENESS = settings.vad_aggressiveness
+VAD_SILENCE_TIMEOUT_MS = settings.vad_silence_timeout_ms
+VAD_MIN_SPEECH_MS = settings.vad_min_speech_ms
+VAD_WAKE_TIMEOUT_MS = settings.vad_wake_timeout_ms
+VAD_CONFIRM_TIMEOUT_MS = settings.vad_confirm_timeout_ms
+
+STT_MODEL_SIZE = settings.stt_model_size
+STT_DEVICE = settings.stt_device
+STT_COMPUTE_TYPE = settings.stt_compute_type
+STT_INITIAL_PROMPT = settings.stt_initial_prompt
+
+TTS_LANG_CODE = settings.tts_lang_code
+TTS_VOICE = settings.tts_voice
+TTS_SAMPLE_RATE = settings.tts_sample_rate
+
+WAKE_WORD_MODEL = settings.wake_word_model
+WAKE_WORD_THRESHOLD = settings.wake_word_threshold
+WAKE_WORD_CHUNK_SAMPLES = settings.wake_word_chunk_samples
+
+GROQ_API_KEY = settings.groq_api_key
+GROQ_MODEL = settings.groq_model
+GROQ_BACKUP_MODEL = settings.groq_backup_model
+GROQ_MAX_TOKENS = settings.groq_max_tokens
+GROQ_TEMPERATURE = settings.groq_temperature
+GROQ_HISTORY_LENGTH = settings.groq_history_length
+GROQ_MAX_RETRIES = settings.groq_max_retries
+
 FALLBACK_LOG_PATH = LOGS_DIR / "fallback_log.jsonl"

@@ -1,8 +1,10 @@
 """Quick automated test for TTS."""
 import sys
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 from tts import TTS
+
 
 def main():
     print("=" * 60)
@@ -12,11 +14,11 @@ def main():
     try:
         # Initialize component
         tts = TTS()
-        
+
         print("\n[!] Synthesizing and playing text...")
         tts.speak("Hello there! This is a test of the text to speech system.")
         print("  ✅ TTS playback finished successfully.")
-        
+
     except Exception as e:
         print(f"\n❌ Error during TTS playback: {e}")
 

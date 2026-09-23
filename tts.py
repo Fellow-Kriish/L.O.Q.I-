@@ -11,9 +11,10 @@ Supports sentence-boundary chunking for streaming playback:
 Requires espeak-ng installed on the system.
 """
 
-import re
 import os
+import re
 import warnings
+
 import numpy as np
 import sounddevice as sd
 
@@ -40,7 +41,7 @@ class TTS:
         self.pipeline = KPipeline(lang_code=lang_code, repo_id="hexgrad/Kokoro-82M")
         self.voice = voice
         self.sample_rate = sample_rate
-        print(f"  ✅ TTS model loaded.")
+        print("  ✅ TTS model loaded.")
 
     def speak(self, text: str):
         """
@@ -100,7 +101,8 @@ def split_sentences(text: str) -> list[str]:
     Split text into sentences on boundaries: . ! ? followed by whitespace
     or end-of-string. Keeps the punctuation with the sentence.
 
-    Used by brain.py to chunk Groq streaming output.
+    Public utility for callers that need to pre-split text before passing
+    it to speak() or speak_streamed().
     """
     # Split on sentence-ending punctuation followed by space or end
     sentences = re.split(r'(?<=[.!?])\s+', text)

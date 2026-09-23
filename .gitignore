@@ -15,6 +15,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
 
 # ---------------------------------------------------------------------------
 # Runtime output
@@ -34,6 +38,12 @@ wakeword_output/
 # ---------------------------------------------------------------------------
 *.msi
 *.exe
+
+# ---------------------------------------------------------------------------
+# Retired files kept locally for reference, not tracked (includes the large
+# espeak-ng installer and the old build/wrapper artifacts).
+# ---------------------------------------------------------------------------
+deprecated_files/
 
 # ---------------------------------------------------------------------------
 # Models / audio scratch

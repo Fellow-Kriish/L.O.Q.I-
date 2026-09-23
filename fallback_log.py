@@ -40,7 +40,7 @@ def read_log(n: int = 50) -> list[dict]:
     """Read the last N fallback log entries."""
     entries = []
     try:
-        with open(config.FALLBACK_LOG_PATH, "r", encoding="utf-8") as f:
+        with open(config.FALLBACK_LOG_PATH, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:

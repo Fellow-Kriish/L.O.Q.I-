@@ -8,10 +8,9 @@ sustained silence, not a fixed timer.
 Returns raw audio bytes ready for faster-whisper.
 """
 
+import collections
 import io
 import wave
-import struct
-import collections
 
 import pyaudio
 import webrtcvad
@@ -49,14 +48,28 @@ class Recorder:
         if self._pa is None:
             self._pa = pyaudio.PyAudio()
         mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
-        self._stream = self._pa.open(
-            format=pyaudio.paInt16,
-            channels=self.channels,
-            rate=self.sample_rate,
-            input=True,
-            input_device_index=mic_idx,
-            frames_per_buffer=self.chunk_samples,
-        )
+        try:
+            self._stream = self._pa.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,
+                input_device_index=mic_idx,
+                frames_per_buffer=self.chunk_samples,
+            )
+        except Exception as e:
+            if mic_idx is not None:
+                print(f"  ⚠️  Failed to open mic index {mic_idx}. Falling back to default.")
+                self._stream = self._pa.open(
+                    format=pyaudio.paInt16,
+                    channels=self.channels,
+                    rate=self.sample_rate,
+                    input=True,
+                    input_device_index=None,
+                    frames_per_buffer=self.chunk_samples,
+                )
+            else:
+                raise e
 
     def _close_stream(self):
         """Close the mic stream (not PyAudio itself — keep it alive)."""
@@ -65,7 +78,7 @@ class Recorder:
             self._stream.close()
             self._stream = None
 
-    def record(self) -> bytes:
+    def record(self, wake_timeout_ms: int = config.VAD_WAKE_TIMEOUT_MS) -> bytes:
         """
         Record audio from mic until speech ends (VAD-based).
 
@@ -75,8 +88,14 @@ class Recorder:
         3. Stop after `silence_timeout_ms` of continuous silence.
         4. Return WAV bytes (in-memory, 16kHz mono 16-bit).
 
+        Args:
+            wake_timeout_ms: If no speech onset is detected within this time
+                after a wake-word trigger, abort and return empty bytes.
+                Prevents false-positive wake events from deadlocking the
+                assistant (wake listener stays paused while we wait forever).
+
         Returns:
-            WAV file content as bytes.
+            WAV file content as bytes, or empty bytes on timeout/no speech.
         """
         self._open_stream()
 
@@ -84,8 +103,10 @@ class Recorder:
         speech_started = False
         speech_frames = 0
         silence_frames = 0
+        total_frames = 0
         silence_threshold = int(self.silence_timeout_ms / self.chunk_ms)
         min_speech_threshold = int(self.min_speech_ms / self.chunk_ms)
+        wake_timeout_frames = int(wake_timeout_ms / self.chunk_ms)
 
         # Ring buffer: keep the last 300ms of pre-speech audio
         # so we don't clip the beginning of the utterance
@@ -95,10 +116,17 @@ class Recorder:
         try:
             while True:
                 chunk = self._stream.read(self.chunk_samples, exception_on_overflow=False)
+                total_frames += 1
 
                 is_speech = self.vad.is_speech(chunk, self.sample_rate)
 
                 if not speech_started:
+                    # Safety: abort if no speech starts within the wake timeout.
+                    # This happens on false-positive wake triggers.
+                    if total_frames >= wake_timeout_frames:
+                        print("  ⏱️  Wake timeout — no speech detected.")
+                        return b""
+
                     pre_speech_buffer.append(chunk)
                     if is_speech:
                         speech_frames += 1
