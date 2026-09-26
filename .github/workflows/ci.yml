@@ -1,10 +1,13 @@
 # L.O.Q.I. — Continuous Integration
 #
 # Two jobs, both BLOCKING:
-#   * gate      — ruff lint + the intent-router regression. The router tests
-#                 import only stdlib (intents.py + tests/corpus.py), so CI stays
-#                 fast and installs NO heavy ML deps (torch / kokoro /
-#                 faster-whisper). The router precision guarantee is the gate.
+#   * gate      — ruff lint + the router and name-resolution regressions. These
+#                 tests import only stdlib, pydantic(-settings) and rapidfuzz,
+#                 so CI stays fast and installs NO heavy ML deps (torch /
+#                 kokoro / faster-whisper). Router precision and the app/process
+#                 matching policy are the two guarantees worth gating on: one
+#                 decides what the LLM never sees, the other decides what gets
+#                 launched and killed without being asked.
 #   * typecheck — mypy over the whole tree. Was advisory while the v0.1 modules
 #                 carried type debt; the tree is now clean, so this blocks to stop
 #                 new debt landing. Ignores that depend on an uninstalled package
@@ -32,9 +35,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          # pydantic(-settings) is the only runtime dep the router path / config
-          # import needs. Heavy ML wheels are intentionally omitted.
-          pip install pydantic pydantic-settings
+          # The only runtime deps the tested paths import. pydantic(-settings)
+          # backs config.py (python-dotenv comes with it); rapidfuzz backs
+          # app_registry's matcher and has no dependencies of its own. Heavy ML
+          # wheels are intentionally omitted.
+          pip install pydantic pydantic-settings rapidfuzz
       - name: Ruff (lint)
         run: ruff check .
       - name: Router regression (precision gate)
@@ -52,6 +57,6 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt pydantic pydantic-settings
+          pip install -r requirements-dev.txt pydantic pydantic-settings rapidfuzz
       - name: mypy
         run: mypy .

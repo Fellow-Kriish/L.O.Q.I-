@@ -76,13 +76,22 @@ class Settings(BaseSettings):
     stt_initial_prompt: str = (
         "Voice commands for Loki, a personal assistant. Open Notepad, Chrome, "
         "Firefox, Edge, Spotify, Discord, VLC, Steam, Word, Excel. Play music, "
-        "search YouTube and Google."
+        "search YouTube and Google. Weather in Delhi, Mumbai, Bangalore, Chennai."
     )
 
     # -- TTS (Kokoro) --------------------------------------------------------
     tts_lang_code: str = "a"                         # "a" = American English
     tts_voice: str = "af_heart"                      # see Kokoro VOICES.md
     tts_sample_rate: int = 24000                     # Kokoro outputs 24kHz
+
+    # -- Weather skill (Open-Meteo: free, keyless, non-commercial) ----------
+    # Place used when the utterance names none; picked from this machine's
+    # timezone. Override in .env if it isn't right for you:
+    #   LOQI_WEATHER_DEFAULT_CITY=Bengaluru
+    weather_default_city: str = "Delhi"
+    weather_units: Literal["metric", "imperial"] = "metric"
+    weather_cache_ttl_s: int = Field(600, ge=0)      # repeat asks hit the cache
+    weather_request_timeout_s: float = Field(6.0, gt=0.0)
 
     # -- Wake word (openWakeWord) --------------------------------------------
     wake_word_model: str = "hey_loki.onnx"
@@ -96,13 +105,19 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GROQ_API_KEY", "LOQI_GROQ_API_KEY"),
     )
     # Both are Groq *Production* models (Preview models must not be used here).
-    groq_model: str = "openai/gpt-oss-120b"
-    groq_backup_model: str = "qwen/qwen3.6-27b"
+    groq_model: str = "qwen/qwen3.8-27b"
+    groq_backup_model: str = "openai/gpt-oss-120b"
     groq_max_tokens: int = 1024
     # 0.4: assistant answers should be consistent and grounded, not creative.
     groq_temperature: float = Field(0.4, ge=0.0, le=2.0)
     groq_history_length: int = 10
     groq_max_retries: int = Field(2, ge=0)   # transient-error retries per model
+
+    # -- Metrics (per-stage latency) -----------------------------------------
+    # Stage timings are always collected — two perf_counter reads per stage is
+    # noise against a turn measured in seconds. This only gates the JSONL write,
+    # so turning it off silences the log without changing what a turn costs.
+    metrics_enabled: bool = True
 
     # -- Derived (computed) --------------------------------------------------
     @computed_field  # type: ignore[prop-decorator]
@@ -142,7 +157,12 @@ You only receive a request when a separate local intent router has ALREADY tried
 - Numbers under 100: spell out small ones conversationally where natural ("about a dozen" not "12" mid-sentence), but exact figures (prices, times, measurements) can stay as digits — TTS handles digits fine.
 - Keep sentences short. A run-on sentence that reads fine on a screen sounds exhausting spoken aloud. Break long explanations into short, separate sentences.
 - If the answer has multiple parts, say them as a flowing spoken list ("First... then... after that...") not a bulleted one.
-- Target length: default to 2 to 4 sentences for most answers. Only go longer if the user explicitly asked for depth, a full explanation, or a written draft (email, message, code).
+- Length is NOT fixed — match it to what the question actually needs, every time:
+  - Single fact, number, yes/no, or quick lookup ("what's 4 plus 5 times 16", "is the store open", "what time is it") → answer in one short sentence, no explanation unless asked. Don't restate the question, don't add filler like "here's your answer."
+  - A "how" or "why" or something needing a couple steps of reasoning → 2 to 4 sentences, walk through it briefly, skip anything not needed to answer.
+  - Something genuinely complex, technical, or explicitly asked to explain in depth ("explain quantum computing," "walk me through how X works") → take as many sentences as it actually needs. Don't artificially cram a real explanation into 3 sentences just to sound brief — that makes it wrong or useless, not efficient. Long here is correct, not a failure.
+  - A draft (email, message, code) → full length needed, this rule doesn't apply, say "here's a draft" first then give the whole thing.
+  - Before answering, silently judge: is this a fact-lookup, a reasoning question, or a real explain-this request? Let that decide length — never default to a fixed sentence count regardless of category.
 - One exception to brevity: if asked to draft/write something long-form (an email, a message, code), give the full thing — length rule doesn't apply there, TTS just reads the whole draft. Note this out loud briefly first, e.g. "Here's a draft — I'll read it out."
 
 # WHAT YOU CAN AND CANNOT DO
@@ -202,6 +222,11 @@ TTS_LANG_CODE = settings.tts_lang_code
 TTS_VOICE = settings.tts_voice
 TTS_SAMPLE_RATE = settings.tts_sample_rate
 
+WEATHER_DEFAULT_CITY = settings.weather_default_city
+WEATHER_UNITS = settings.weather_units
+WEATHER_CACHE_TTL_S = settings.weather_cache_ttl_s
+WEATHER_REQUEST_TIMEOUT_S = settings.weather_request_timeout_s
+
 WAKE_WORD_MODEL = settings.wake_word_model
 WAKE_WORD_THRESHOLD = settings.wake_word_threshold
 WAKE_WORD_CHUNK_SAMPLES = settings.wake_word_chunk_samples
@@ -214,4 +239,7 @@ GROQ_TEMPERATURE = settings.groq_temperature
 GROQ_HISTORY_LENGTH = settings.groq_history_length
 GROQ_MAX_RETRIES = settings.groq_max_retries
 
+METRICS_ENABLED = settings.metrics_enabled
+
 FALLBACK_LOG_PATH = LOGS_DIR / "fallback_log.jsonl"
+LATENCY_LOG_PATH = LOGS_DIR / "latency.jsonl"

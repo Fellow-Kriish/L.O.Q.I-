@@ -29,6 +29,26 @@ class Intent:
     tier: int                       # 0, 1, 2, 3
     handler: str                    # action function name in actions.py
     extract: Callable | None = None  # (match) -> dict of extracted args
+    describe: str | None = None     # spoken action template, e.g. "close {app_name}"
+
+    def description(self, args: dict) -> str:
+        """
+        A human phrase for this action, for the confirm gate to speak back.
+
+        Tier 2 and 3 read this aloud before doing anything, so it has to be a
+        sentence fragment a person can actually parse — "close chrome", not
+        "close_app: {'app_name': 'chrome'}". Falls back to the intent name when
+        no template is set, which is fine for the untiered intents that are
+        never spoken back.
+        """
+        if not self.describe:
+            return self.name
+        try:
+            return self.describe.format(**args)
+        except (KeyError, IndexError):
+            # Template and extractor disagree. Say something safe rather than
+            # crashing the gate that exists to keep the user in control.
+            return self.name
 
 
 @dataclass
@@ -59,6 +79,22 @@ def _extract_url(match: re.Match) -> dict:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     return {"url": url}
+
+
+def _extract_place(match: re.Match) -> dict:
+    """Pull an optional place name from a regex group named 'place'."""
+    place = match.group("place") or ""
+    return {"place": place.strip()}
+
+
+def _extract_timer_set(match: re.Match) -> dict:
+    """The whole utterance — timers.extract_timer_args strips scaffolding itself."""
+    return {"query": match.group(0)}
+
+
+def _extract_timer_cancel(match: re.Match) -> dict:
+    """Whatever sits between the verb and the word 'timer' — scope or label."""
+    return {"query": (match.group("query") or "").strip()}
 
 
 def _extract_contact_and_message(match: re.Match) -> dict:
@@ -164,6 +200,45 @@ INTENTS: list[Intent] = [
         tier=0,
         handler="open_google",
     ),
+    # Weather MUST precede the search intents: search_google's broad
+    # "look up ..." pattern would otherwise eat "look up the weather in delhi"
+    # and open a Google results page instead of answering.
+    Intent(
+        name="weather",
+        patterns=[
+            _p(r"(?:what(?:'?s| is)|how(?:'?s| is)) the weather(?: (?:like|today|outside|now|there))*(?: (?:in|for|at) (?P<place>.+?))?"),
+            _p(r"(?:will it|is it going to|does it) rain(?: (?:today|tonight|now))*(?: (?:in|for|at) (?P<place>.+?))?"),
+            _p(r"(?:check|look up|tell me) (?:the )?(?:weather|temperature)(?: (?:in|for|at) (?P<place>.+?))?"),
+            _p(r"weather(?: (?:report|forecast|today|outside|now|update))*(?: (?:in|for|at) (?P<place>.+?))?"),
+            # "at which water boils" is a question clause, not a place — refuse
+            # question words so "what's the temperature at which water boils"
+            # keeps falling through to the LLM instead of geocoding nonsense.
+            _p(r"(?:what(?:'?s| is) the )?temperature(?: (?:outside|right now|now|today|there))*(?: (?:in|for|at) (?!which\b|what\b|how\b)(?P<place>.+?))?"),
+        ],
+        tier=0,
+        handler="weather",
+        extract=_extract_place,
+    ),
+
+    # Timer status needs "timer" in the pattern somewhere: without it,
+    # "how much time is left in the match" (a question for the LLM) would
+    # match, and "left"-only patterns hijack exactly the kind of question
+    # the anchoring exists to protect.
+    Intent(
+        name="timer_status",
+        patterns=[
+            _p(r"how much time(?: is)? left.*\btimers?\b.*"),
+            _p(r"how long(?: is)? left.*\btimers?\b.*"),
+            _p(r"what(?:'?s| is) left.*\btimers?\b.*"),
+            _p(r"how much longer.*\btimers?\b.*"),
+            _p(r"how many timers\b.*"),
+            _p(r"timers? status.*"),
+            _p(r"(?:is|are)\b.*\btimers?\b.*\b(?:done|finished|up|ringing|over)\b.*"),
+            _p(r"(?:check|list) (?:the |my |all (?:the |my )?)?timers?\b.*"),
+        ],
+        tier=0,
+        handler="timer_status",
+    ),
 
     # ------------------------------------------------------------------
     # Tier 1 — reversible actions, no confirmation
@@ -173,7 +248,9 @@ INTENTS: list[Intent] = [
         patterns=[
             _p(r"(?:search|find|look up)(?: on| in)? youtube (?:for )?(?P<query>.+?)"),
             _p(r"youtube search (?:for )?(?P<query>.+?)"),
-            _p(r"(?:play|search|find|look up) (?P<query>.+?) on youtube"),
+            # "search(?: for)?" — without it, "search for cats on youtube"
+            # captures the query as "for cats".
+            _p(r"(?:play|search(?: for)?|find|look up) (?P<query>.+?) on youtube"),
         ],
         tier=1,
         handler="search_youtube",
@@ -199,15 +276,32 @@ INTENTS: list[Intent] = [
         handler="open_website",
         extract=_extract_url,
     ),
+    # Timer intents MUST precede open_app and close_app: open_app's
+    # "start ..." pattern would eat "start a timer" (launching an app named
+    # "a timer"), and close_app's "stop/kill ..." would eat "stop the timer".
+    # Both require the word "timer" in the utterance so "start music" and
+    # "stop the music" keep their existing routes.
     Intent(
-        name="open_app",
+        name="timer_set",
         patterns=[
-            _p(r"(?:open|launch|start|run) (?:the |my )?(?P<app>[\w\s]+?)(?:\s+app)?"),
+            _p(r"(?:set|start|create|make)\b.*\btimers?\b.*"),
         ],
         tier=1,
-        handler="open_app",
-        extract=_extract_app,
+        handler="set_timer",
+        extract=_extract_timer_set,
     ),
+    Intent(
+        name="timer_cancel",
+        patterns=[
+            _p(r"(?:cancel|stop|clear|kill|end)(?: the| my)?\s*(?P<query>.*?)\s*timers?\b.*"),
+        ],
+        tier=1,
+        handler="cancel_timer",
+        extract=_extract_timer_cancel,
+    ),
+    # play_music MUST precede open_app: open_app's "start ..." pattern would
+    # otherwise eat "start music" and try to launch an app named "music",
+    # falling through to the LLM instead of playing.
     Intent(
         name="play_music",
         patterns=[
@@ -217,6 +311,15 @@ INTENTS: list[Intent] = [
         ],
         tier=1,
         handler="play_music",
+    ),
+    Intent(
+        name="open_app",
+        patterns=[
+            _p(r"(?:open|launch|start|run) (?:the |my )?(?P<app>[\w\s]+?)(?:\s+app)?"),
+        ],
+        tier=1,
+        handler="open_app",
+        extract=_extract_app,
     ),
 
     # ------------------------------------------------------------------
@@ -230,6 +333,7 @@ INTENTS: list[Intent] = [
         tier=2,
         handler="close_app",
         extract=_extract_app,
+        describe="close {app_name}",
     ),
 
     # ------------------------------------------------------------------
@@ -279,3 +383,18 @@ def route(text: str) -> MatchResult | None:
                         args = intent.extract(match)
                 return MatchResult(intent=intent, args=args, raw_text=text)
     return None
+
+
+# An utterance that is nothing but the wake word echoed back ("hey loki",
+# "loki", "low key"). Whisper transcribes the spoken wake word freely, so this
+# shape reaches the router, matches nothing, and burns a cloud round-trip plus
+# a fallback-log entry on something that carries no request at all.
+_WAKE_ECHO = re.compile(
+    r"^(?:(?:hey|ok|okay)\s+)?(?:lo[qk]i|low[\s-]?key)$",
+    re.IGNORECASE,
+)
+
+
+def is_wake_echo(text: str) -> bool:
+    """True when the utterance is only the wake word itself — no request in it."""
+    return _WAKE_ECHO.match(normalize(text)) is not None

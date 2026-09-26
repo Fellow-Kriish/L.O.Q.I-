@@ -6,8 +6,9 @@ has no match — open-ended questions, drafting text, explaining concepts, etc.
 
 Two public entry points:
     * ``ask(text) -> str``            — full response, for text mode / logging.
-    * ``ask_stream(text) -> Iterator[str]`` — sentences as they stream in, so TTS
+    * ``ask_stream(text, stop_event) -> Iterator[str]`` — sentences as they stream in, so TTS
       can start speaking sentence 1 while sentence 2 is still generating.
+      Pass a threading.Event as stop_event to cancel mid-stream (barge-in).
 
 Reliability: the Groq SDK retries transient errors (429 / 5xx / connection) with
 backoff internally (honoring Retry-After); on top of that we fail over from the
@@ -20,7 +21,9 @@ through confirm.py's gate, never executes directly.
 
 from __future__ import annotations
 
+import contextlib
 import re
+import threading
 from collections.abc import Iterator
 
 from groq import (
@@ -83,8 +86,15 @@ class Brain:
         self.history.append({"role": "assistant", "content": content})
         return content
 
-    def ask_stream(self, text: str) -> Iterator[str]:
-        """Yield complete sentences as they stream in. Never raises."""
+    def ask_stream(self, text: str, stop_event: threading.Event | None = None) -> Iterator[str]:
+        """Yield complete sentences as they stream in. Never raises.
+
+        Args:
+            text: The user's utterance.
+            stop_event: Optional threading.Event. When set (e.g. by barge-in),
+                        the stream is cancelled immediately and no further
+                        sentences are yielded.
+        """
         if not self.client:
             yield _NO_KEY_MSG
             return
@@ -99,6 +109,12 @@ class Brain:
         full_response = ""
         try:
             for chunk in stream:
+                # Barge-in: caller signalled stop — close the stream and bail.
+                if stop_event is not None and stop_event.is_set():
+                    with contextlib.suppress(Exception):
+                        stream.close()
+                    break
+
                 delta = chunk.choices[0].delta
                 token = getattr(delta, "content", None)
                 if not token:
@@ -120,10 +136,12 @@ class Brain:
                 yield _ERROR_MSG
                 return
 
-        if buffer.strip():
+        # Only yield the trailing buffer if we weren't barged in on.
+        if buffer.strip() and (stop_event is None or not stop_event.is_set()):
             yield buffer.strip()
 
-        self.history.append({"role": "assistant", "content": full_response})
+        if full_response:
+            self.history.append({"role": "assistant", "content": full_response})
 
     def clear_history(self) -> None:
         """Clear conversation history."""

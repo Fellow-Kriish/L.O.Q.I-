@@ -35,10 +35,10 @@ Confirmed against Sept 2026 model landscape:
 | Layer | Tool | Notes (2026) |
 |---|---|---|
 | Wake word | openWakeWord | unchanged, still best free option |
-| STT | faster-whisper (tiny/base, int8) | unchanged |
+| STT | faster-whisper (`small.en`, float16 on GPU / int8 CPU fallback) | unchanged |
 | Intent routing | Python regex/keyword table | unchanged, this is the reliability backbone |
-| Reasoning (cloud) | Groq API — `llama-3.3-70b-versatile` primary, `openai/gpt-oss-20b` as backup | Free tier confirmed live: 30 RPM. `llama-3.3-70b` capped ~1,000 req/day, 12K TPM; `gpt-oss-20b` similar. Groq killed Mixtral/Mistral models in 2025 — don't spec those. |
-| Reasoning (local fallback, optional) | Llama 3.2 3B or Qwen3 4B via Ollama, Q4 | only if you want offline mode; noticeably weaker than Groq's 70B |
+| Reasoning (cloud) | Groq API — `qwen/qwen3.8-27b` primary, `openai/gpt-oss-120b` as backup | Both are Groq *Production* models (Preview models must not be used — enforced by the comment on `config.py`'s `groq_model`). Free tier confirmed live: 30 RPM, per-model daily caps in the low thousands of requests — fine for solo use. Groq killed Mixtral/Mistral models in 2025 — don't spec those. |
+| Reasoning (local fallback, optional) | Llama 3.2 3B or Qwen3 4B via Ollama, Q4 | only if you want offline mode; noticeably weaker than the Groq cloud models |
 | TTS | Kokoro-82M | unchanged, still best small local TTS |
 | VAD | webrtcvad | unchanged |
 | Known-app actions | `webbrowser`, `subprocess`, `pywinauto` | unchanged — deterministic, no vision model |

@@ -84,6 +84,39 @@ class STT:
 
         return self._run(audio_input)
 
+    def transcribe_quick(self, audio: bytes) -> str:
+        """
+        Fast transcription path for barge-in detection only.
+
+        Uses greedy decoding (beam_size=1) and skips the internal VAD filter
+        because barge_in.py already ran WebRTC VAD before calling this.
+        Roughly 3× faster than transcribe() — trades some accuracy for speed
+        to minimize the mic-blind window between burst detections.
+
+        Args:
+            audio: WAV bytes from the barge-in recorder.
+
+        Returns:
+            Lowercased, stripped transcription (empty string on failure).
+        """
+        try:
+            audio_input = _decode_wav(audio)
+        except Exception as e:
+            log.debug("Barge-in WAV decode failed (%s).", e)
+            return ""
+        try:
+            segments, _ = self.model.transcribe(
+                audio_input,
+                beam_size=1,          # greedy — fast, accurate enough for short phrases
+                language="en",
+                vad_filter=False,     # already VAD-gated by caller
+                initial_prompt=None,  # no domain bias needed for stop-phrases
+            )
+            return " ".join(seg.text.strip() for seg in segments).strip().lower()
+        except Exception as e:
+            log.debug("Barge-in transcription error: %s", e)
+            return ""
+
     # --------------------------------------------------------------- internals
     def _run(self, audio_input: np.ndarray | str | io.BytesIO) -> str:
         try:
