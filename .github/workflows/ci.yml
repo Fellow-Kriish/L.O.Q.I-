@@ -1,13 +1,16 @@
 # L.O.Q.I. — Continuous Integration
 #
-# Two jobs:
-#   * gate      — BLOCKING: ruff lint + the intent-router regression. The router
-#                 tests import only stdlib (intents.py + tests/corpus.py), so CI
-#                 stays fast and installs NO heavy ML deps (torch / kokoro /
+# Two jobs, both BLOCKING:
+#   * gate      — ruff lint + the intent-router regression. The router tests
+#                 import only stdlib (intents.py + tests/corpus.py), so CI stays
+#                 fast and installs NO heavy ML deps (torch / kokoro /
 #                 faster-whisper). The router precision guarantee is the gate.
-#   * typecheck — ADVISORY: mypy over the whole tree. The codebase is being typed
-#                 incrementally; this surfaces type debt without blocking merges.
-#                 Flip `continue-on-error` off once the legacy modules are typed.
+#   * typecheck — mypy over the whole tree. Was advisory while the v0.1 modules
+#                 carried type debt; the tree is now clean, so this blocks to stop
+#                 new debt landing. Ignores that depend on an uninstalled package
+#                 or on Windows-only APIs (os.startfile) are written as
+#                 `type: ignore[<code>, unused-ignore]` so the result is identical
+#                 with or without the ML wheels present.
 name: CI
 
 on:
@@ -38,9 +41,8 @@ jobs:
         run: pytest tests/ -m "not audio and not model and not network" -v
 
   typecheck:
-    name: mypy (advisory)
+    name: mypy
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -96,8 +96,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GROQ_API_KEY", "LOQI_GROQ_API_KEY"),
     )
     # Both are Groq *Production* models (Preview models must not be used here).
-    groq_model: str = "llama-3.3-70b-versatile"
-    groq_backup_model: str = "openai/gpt-oss-20b"
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_backup_model: str = "qwen/qwen3.6-27b"
     groq_max_tokens: int = 1024
     # 0.4: assistant answers should be consistent and grounded, not creative.
     groq_temperature: float = Field(0.4, ge=0.0, le=2.0)

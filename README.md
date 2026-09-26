@@ -114,11 +114,32 @@ LOQI_STT_DEVICE=cuda
 LOQI_STT_MODEL_SIZE=small.en
 LOQI_STT_COMPUTE_TYPE=float16
 LOQI_WAKE_WORD_THRESHOLD=0.6
-LOQI_MIC_DEVICE_INDEX=15
+LOQI_MIC_DEVICE_NAME=Yeti
 ```
 
 Existing code reads the familiar uppercase constants (`config.GROQ_MODEL`, …); those
 are kept as backward-compatible aliases over the settings model, so both styles work.
+
+### Microphone selection
+
+By default LOQI uses the system default input. To target a specific mic, set
+`LOQI_MIC_DEVICE_NAME` to any substring of its name (`Yeti`, `Realtek`, `Buds`) —
+name matching survives the device renumbering Windows does when hardware is plugged
+in or removed. `LOQI_MIC_DEVICE_INDEX` pins an exact index if you prefer; an index
+that no longer exists is reported and ignored rather than failing. To see the
+available devices:
+
+```bash
+python -c "import pyaudio, audio_devices; print(audio_devices.describe_devices(pyaudio.PyAudio()))"
+```
+
+### Speech recognition accuracy
+
+`stt_device=auto` (the default) uses CUDA when a GPU is present and falls back to CPU
+otherwise; a failed CUDA init degrades to CPU/int8 rather than crashing. The decoder is
+biased with a domain vocabulary (`LOQI_STT_INITIAL_PROMPT`) covering the assistant's
+name and common app names, which is what keeps "Loki" from being transcribed as "loci"
+or "low key".
 
 ---
 
@@ -135,10 +156,9 @@ pre-commit install          # optional: run lint on every commit
 | Type-check      | `mypy .`                                  |
 | Router tests    | `pytest tests/`                           |
 
-CI (`.github/workflows/ci.yml`) runs **ruff + the router regression as the blocking
-gate**, and **mypy as an advisory signal** (the v0.1 modules are being typed
-incrementally). The router tests import only the standard library, so CI needs none
-of the heavy ML dependencies.
+CI (`.github/workflows/ci.yml`) runs **ruff, mypy, and the router regression as
+blocking gates**. The router tests import only the standard library, so CI needs none
+of the heavy ML dependencies — the whole pipeline installs in seconds.
 
 Interactive hardware smoke scripts (`test_stt.py`, `test_tts.py`, `test_wakeword.py`,
 `test_e2e.py`) live at the repo root; they need a mic/speaker and are run by hand,
@@ -156,6 +176,7 @@ Flat modules, run directly (not packaged):
 | `config.py`         | Typed settings + backward-compatible constants        |
 | `wakeword.py`       | Wake-word detection (openWakeWord)                    |
 | `recorder.py`       | VAD-gated microphone capture                          |
+| `audio_devices.py`  | Microphone resolution shared by recorder + wake word  |
 | `stt.py`            | Speech-to-text (faster-whisper)                       |
 | `intents.py`        | Regex intent router (full-utterance anchored)         |
 | `actions.py`        | Handlers for matched intents                          |

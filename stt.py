@@ -86,6 +86,22 @@ class STT:
 
     # --------------------------------------------------------------- internals
     def _run(self, audio_input: np.ndarray | str | io.BytesIO) -> str:
+        try:
+            return self._transcribe_segments(audio_input)
+        except RuntimeError as e:
+            # Catches missing CUDA runtime libraries (cublas64_12.dll,
+            # cudnn, etc.) that only surface on the first encode() call
+            # even though the model loaded without error.
+            if self.device != "cpu":
+                log.warning(
+                    "STT inference failed on %s (%s). Falling back to CPU/int8.",
+                    self.device, e,
+                )
+                self._fallback_to_cpu()
+                return self._transcribe_segments(audio_input)
+            raise
+
+    def _transcribe_segments(self, audio_input: np.ndarray | str | io.BytesIO) -> str:
         segments, _info = self.model.transcribe(
             audio_input,
             beam_size=5,
@@ -94,6 +110,12 @@ class STT:
             initial_prompt=self.initial_prompt,
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
+
+    def _fallback_to_cpu(self) -> None:
+        """Reload the model on CPU/int8 after a GPU failure."""
+        self.device, self.compute_type = "cpu", "int8"
+        self.model = self._load(self.model_size, self.device, self.compute_type)
+        log.info("  ✅ STT re-initialized on CPU/int8.")
 
     def _load(self, model_size: str, device: str, compute_type: str) -> WhisperModel:
         log.info("  Loading STT model: %s on %s (%s)...", model_size, device, compute_type)

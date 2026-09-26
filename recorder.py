@@ -16,6 +16,7 @@ import pyaudio
 import webrtcvad
 
 import config
+from audio_devices import resolve_mic_index
 
 
 class Recorder:
@@ -47,9 +48,9 @@ class Recorder:
         """Open the PyAudio mic stream."""
         if self._pa is None:
             self._pa = pyaudio.PyAudio()
-        mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
+        assert self._pa is not None
+        mic_idx = resolve_mic_index(self._pa)
         try:
-            assert self._pa is not None
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -59,18 +60,18 @@ class Recorder:
                 frames_per_buffer=self.chunk_samples,
             )
         except Exception as e:
-            if mic_idx is not None:
-                print(f"  ⚠️  Failed to open mic index {mic_idx}. Falling back to default.")
-                self._stream = self._pa.open(
-                    format=pyaudio.paInt16,
-                    channels=self.channels,
-                    rate=self.sample_rate,
-                    input=True,
-                    input_device_index=None,
-                    frames_per_buffer=self.chunk_samples,
-                )
-            else:
-                raise e
+            # The resolved device can still be busy or claimed by another app.
+            if mic_idx is None:
+                raise
+            print(f"  ⚠️  Failed to open mic index {mic_idx} ({e}). Falling back to default.")
+            self._stream = self._pa.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,
+                input_device_index=None,
+                frames_per_buffer=self.chunk_samples,
+            )
 
     def _close_stream(self):
         """Close the mic stream (not PyAudio itself — keep it alive)."""

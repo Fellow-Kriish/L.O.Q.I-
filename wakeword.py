@@ -9,13 +9,14 @@ Thread is never blocked by TTS playback or in-flight LLM calls.
 """
 
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pyaudio
 from openwakeword.model import Model as OWWModel
 
 import config
+from audio_devices import resolve_mic_index
 
 
 class WakeWordListener:
@@ -91,7 +92,7 @@ class WakeWordListener:
         stream = None
 
         def _open_stream():
-            mic_idx = getattr(config, 'MIC_DEVICE_INDEX', None)
+            mic_idx = resolve_mic_index(pa)
             try:
                 return pa.open(
                     format=pyaudio.paInt16,
@@ -102,17 +103,18 @@ class WakeWordListener:
                     frames_per_buffer=self.chunk_samples,
                 )
             except Exception as e:
-                if mic_idx is not None:
-                    print(f"  ⚠️  Failed to open mic index {mic_idx}. Falling back to default.")
-                    return pa.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=self.sample_rate,
-                        input=True,
-                        input_device_index=None,
-                        frames_per_buffer=self.chunk_samples,
-                    )
-                raise e
+                # The resolved device can still be busy or claimed by another app.
+                if mic_idx is None:
+                    raise
+                print(f"  ⚠️  Failed to open mic index {mic_idx} ({e}). Falling back to default.")
+                return pa.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=self.sample_rate,
+                    input=True,
+                    input_device_index=None,
+                    frames_per_buffer=self.chunk_samples,
+                )
 
         try:
             stream = _open_stream()
