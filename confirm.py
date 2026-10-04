@@ -17,15 +17,55 @@ defaulting to "no", so a mumble doesn't force the user to repeat the whole
 command — but two mumbles in a row means we genuinely can't hear them.
 """
 
+import re
+
 import config
 
 _YES_WORDS = (
     "yes", "y", "yeah", "yep", "sure", "do it", "go ahead", "confirm", "ok", "okay",
+    "yes please",
 )
 _NO_WORDS = (
     "no", "n", "nope", "nah", "don't", "dont", "do not", "stop", "cancel",
     "never mind", "nevermind",
 )
+
+# Strip everything except word characters, whitespace, and apostrophes (for
+# "don't").  Whisper emits "Yes.", "Yeah!", "Okay," — all of which must match.
+_YN_PUNCT = re.compile(r"[^\w\s']")
+
+
+def _normalize_yn(text: str) -> str:
+    """Lower-case, strip punctuation, collapse whitespace.
+
+    Whisper returns capitalized, punctuated prose ("Yes, please.") and the
+    comparison must survive that.  Apostrophes are kept so "don't" stays intact.
+    """
+    text = _YN_PUNCT.sub("", text.lower())
+    return " ".join(text.split())
+
+
+def _matches(response: str, words: tuple[str, ...]) -> bool:
+    """True if *response* equals or starts with any word in *words*.
+
+    Exact membership (the old check) handles the bare-word case.  The
+    starts-with arm handles Whisper's trailing filler: "yes, please" →
+    "yes please" → starts with "yes".  The space after the word prevents
+    "yep" matching a hypothetical "yeps".
+    """
+    if response in words:
+        return True
+    return any(response.startswith(w + " ") for w in words)
+
+
+def _contains(response: str, words: tuple[str, ...]) -> bool:
+    """True if any word/phrase in *words* appears as whole words in *response*.
+
+    Used for refusals, which win wherever they sit: "yeah, no" and "okay wait,
+    stop" start with a yes word but are not consent.
+    """
+    padded = f" {response} "
+    return any(f" {w} " in padded for w in words)
 
 
 def confirm_action(
@@ -67,10 +107,10 @@ def confirm_action(
         if recorder_fn and stt_fn:
             wav = recorder_fn(wake_timeout_ms=config.VAD_CONFIRM_TIMEOUT_MS)
             if wav:
-                return stt_fn(wav).lower().strip()
+                return _normalize_yn(stt_fn(wav))
             # Silence within timeout — return empty so caller treats as "no"
             return ""
-        return input(prompt).strip().lower()
+        return _normalize_yn(input(prompt))
 
     def _ask_yes_no(prompt: str, strict: bool = False, expected: str | None = None) -> bool:
         """
@@ -83,14 +123,19 @@ def confirm_action(
         full repeat-back — a casual "yeah" is not consent to the irreversible.
         """
         yes_words = ("yes", "y") if strict else _YES_WORDS
+        norm_expected = _normalize_yn(expected) if expected else None
         for attempt in (1, 2):
             response = _hear_yn(prompt)
             if not response:
                 return False
-            if response == expected or response in yes_words:
+            if response == norm_expected:
                 return True
-            if response in _NO_WORDS:
+            # Refusal first, anywhere in the reply: on a mixed answer the gate
+            # must fail closed.
+            if _contains(response, _NO_WORDS):
                 return False
+            if _matches(response, yes_words):
+                return True
             if attempt == 1:
                 _say("Sorry, was that a yes or a no?")
         return False

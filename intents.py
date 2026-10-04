@@ -333,7 +333,9 @@ INTENTS: list[Intent] = [
         tier=2,
         handler="close_app",
         extract=_extract_app,
-        describe="close {app_name}",
+        # Spoken by the confirm gate. Must match close_app's real behaviour:
+        # a normal close that never forces an app with a window (save prompt).
+        describe="close {app_name}. If it asks to save, I'll leave it open for you",
     ),
 
     # ------------------------------------------------------------------

@@ -44,10 +44,12 @@ installed ones, because whether an app can be closed depends on live state.
 """
 
 import csv
+import ctypes
 import io
 import json
 import os
 import subprocess
+import sys
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -514,6 +516,83 @@ def is_process_running(image: str) -> bool:
         if row and row[0].strip().lower() == image.lower():
             return True
     return False
+
+
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def has_visible_window(image: str) -> bool:
+    """
+    True when any process named ``image`` owns a visible top-level window.
+
+    This is close_app's "may it be forced?" question. A windowed app that is
+    still alive after WM_CLOSE is, overwhelmingly, showing its own "Save
+    changes?" dialog — force-killing it destroys exactly the work that dialog
+    exists to protect. A windowless process has no such prompt to show.
+
+    Asked of the window manager directly (EnumWindows) rather than by parsing
+    taskkill/tasklist text, which is localized. Any failure, and any
+    non-Windows host, answers True: when we cannot tell, we must not force.
+    """
+    if sys.platform != "win32":
+        return True
+    target = image.lower()
+    try:
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined, unused-ignore]
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+        from ctypes import wintypes
+
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        found = False
+        seen = 0
+        name_cache: dict[int, str] = {}
+
+        def _image_of(pid: int) -> str:
+            # Unopenable processes (elevated, protected) come back as "" and
+            # never match. That is safe: if we cannot open it, a non-elevated
+            # taskkill /F could not kill it either.
+            if pid in name_cache:
+                return name_cache[pid]
+            name = ""
+            handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                try:
+                    buf = ctypes.create_unicode_buffer(1024)
+                    size = wintypes.DWORD(len(buf))
+                    if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                        name = os.path.basename(buf.value).lower()
+                finally:
+                    kernel32.CloseHandle(handle)
+            name_cache[pid] = name
+            return name
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined, misc, unused-ignore]
+        def _visit(hwnd, _lparam):
+            nonlocal found, seen
+            seen += 1
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if _image_of(pid.value) == target:
+                found = True
+                return False  # stop enumerating
+            return True
+
+        ok = user32.EnumWindows(_visit, 0)
+        if found:
+            return True
+        # EnumWindows failed outright, or we saw no windows at all: a session
+        # with no desktop access (service, scheduled task, remote shell) gets
+        # an empty enumeration, which proves nothing. A real interactive
+        # desktop always has windows (the taskbar, at minimum).
+        if not ok or seen == 0:
+            log.warning("Window probe for %s could not see the desktop; treating it as windowed.", image)
+            return True
+        return False
+    except Exception as e:
+        log.warning("Window probe for %s failed (%s); treating it as windowed.", image, e)
+        return True
 
 
 def list_apps() -> list[str]:

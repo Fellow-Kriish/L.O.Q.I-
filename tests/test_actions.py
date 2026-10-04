@@ -4,10 +4,12 @@ close_app regression tests: graceful close before force kill.
 The confirm gate approves the intent (close this app), not the damage: an
 instant ``taskkill /F`` throws away unsaved work without ever offering the app
 its own chance to save. These tests pin the escalation order — WM_CLOSE first,
-``/F`` only once the grace period has expired on a process that ignored it.
+and ``/F`` only for a *windowless* process that ignored it. An app that still
+has a visible window is almost certainly showing a save prompt, and is never
+forced.
 
-No Windows needed: taskkill and the liveness probe are monkeypatched, and the
-grace period is zeroed so the escalation path runs instantly.
+No Windows needed: taskkill, the liveness probe and the window probe are
+monkeypatched, and the grace period is zeroed so escalation runs instantly.
 """
 
 import subprocess
@@ -55,20 +57,44 @@ def test_graceful_close_wins_when_the_app_exits(monkeypatch, running_chrome):
     assert recorder.calls == [["taskkill", "/IM", "chrome.exe"]]
 
 
-def test_force_kill_only_after_the_grace_period(monkeypatch, running_chrome):
-    """The app ignores WM_CLOSE → exactly one /F, and only after the grace wait."""
+def test_windowed_app_is_never_force_killed(monkeypatch, running_chrome):
+    """
+    The data-loss case. The app is still alive after WM_CLOSE *and* has a
+    visible window — i.e. it is showing "Save changes?". /F here would destroy
+    the document the dialog is protecting. It must be left open, and the user
+    told why.
+    """
     recorder = _Recorder()
     monkeypatch.setattr(actions.subprocess, "run", recorder)
     monkeypatch.setattr(actions, "is_process_running", lambda image: True)
+    monkeypatch.setattr(actions, "has_visible_window", lambda image: True)
     monkeypatch.setattr(actions, "_GRACEFUL_CLOSE_WAIT_S", 0.0)
 
-    ok, _text = actions.close_app("chrome")
+    ok, text = actions.close_app("chrome")
+
+    assert not ok
+    assert recorder.calls == [["taskkill", "/IM", "chrome.exe"]]
+    assert "/F" not in [arg for call in recorder.calls for arg in call]
+    assert "save" in text.lower()
+
+
+def test_windowless_process_is_forced_after_the_grace_period(monkeypatch, running_chrome):
+    """No window, ignored WM_CLOSE → exactly one /F, after the grace wait."""
+    recorder = _Recorder()
+    monkeypatch.setattr(actions.subprocess, "run", recorder)
+    monkeypatch.setattr(actions, "is_process_running", lambda image: True)
+    monkeypatch.setattr(actions, "has_visible_window", lambda image: False)
+    monkeypatch.setattr(actions, "_GRACEFUL_CLOSE_WAIT_S", 0.0)
+
+    ok, text = actions.close_app("chrome")
 
     assert ok
     assert recorder.calls == [
         ["taskkill", "/IM", "chrome.exe"],
         ["taskkill", "/IM", "chrome.exe", "/F"],
     ]
+    # A forced close must not be reported the same way as a clean one.
+    assert "force" in text.lower()
 
 
 def test_force_kill_failure_is_reported(monkeypatch, running_chrome):
@@ -76,6 +102,7 @@ def test_force_kill_failure_is_reported(monkeypatch, running_chrome):
     recorder = _Recorder(returncode=1)
     monkeypatch.setattr(actions.subprocess, "run", recorder)
     monkeypatch.setattr(actions, "is_process_running", lambda image: True)
+    monkeypatch.setattr(actions, "has_visible_window", lambda image: False)
     monkeypatch.setattr(actions, "_GRACEFUL_CLOSE_WAIT_S", 0.0)
 
     ok, text = actions.close_app("chrome")

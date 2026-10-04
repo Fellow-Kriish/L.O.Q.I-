@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 
 import timers
-from app_registry import is_process_running, lookup, resolve, resolve_process
+from app_registry import has_visible_window, is_process_running, lookup, resolve, resolve_process
 from logging_setup import get_logger
 from timers import extract_timer_args
 from weather import current_report
@@ -166,9 +166,14 @@ def close_app(app_name: str = "", **kwargs) -> tuple[bool, str]:
     heard a yes before this runs.
 
     Graceful first: taskkill without /F posts WM_CLOSE, letting the app save
-    its state and run its own prompts. Force (/F) only if it is still alive
-    after the grace period — the confirm gate approved closing the app, not
-    discarding whatever it was holding.
+    its state and run its own prompts. The confirm gate approved closing the
+    app, not discarding whatever it was holding — so /F is never used on an
+    app that still has a visible window after the grace period. That window
+    is, overwhelmingly, the app's own "Save changes?" dialog; killing it is
+    exactly the data loss the dialog exists to prevent. We leave it open and
+    say so. Only windowless processes (tray/background helpers, which refuse
+    WM_CLOSE outright and have no prompt to show) are forced, and the reply
+    says "force-closed" so the user knows which path ran.
     """
     if not app_name:
         return False, "I didn't catch which app to close."
@@ -201,6 +206,15 @@ def close_app(app_name: str = "", **kwargs) -> tuple[bool, str]:
             break
         time.sleep(_GRACEFUL_CLOSE_POLL_S)
 
+    # Still alive. If it has a window, it is waiting on the user — most likely
+    # a save prompt. Hand control back rather than destroy unsaved work.
+    if has_visible_window(match.image):
+        log.info("%s still open after WM_CLOSE with a visible window; not forcing.", match.image)
+        return False, (
+            f"{spoken} is still open. It may be asking you to save something, "
+            "so I've left it for you."
+        )
+
     try:
         result = subprocess.run(
             ["taskkill", "/IM", match.image, "/F"],
@@ -212,7 +226,7 @@ def close_app(app_name: str = "", **kwargs) -> tuple[bool, str]:
         return False, f"Failed to close {spoken}: {e}"
 
     if result.returncode == 0:
-        return True, f"Closed {spoken}."
+        return True, f"{spoken} wouldn't close normally, so I force-closed it."
     # It was running a moment ago when resolve_process() saw it, so this is a
     # race (it exited on its own) or a permissions refusal.
     return False, f"Couldn't close {spoken}. It may have already exited."

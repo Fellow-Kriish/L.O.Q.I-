@@ -304,3 +304,15 @@ def test_liveness_failure_reads_as_alive(monkeypatch):
     """
     monkeypatch.setattr(app_registry.subprocess, "run", _fake_run("", returncode=1))
     assert is_process_running("chrome.exe")
+
+
+def test_window_probe_fails_closed_off_windows(monkeypatch):
+    """
+    has_visible_window() is what authorizes close_app's /F. Where it cannot
+    look (non-Windows CI, a session with no desktop), it must answer True —
+    "assume a save prompt may be up" — never False.
+    """
+    import app_registry
+
+    monkeypatch.setattr(app_registry.sys, "platform", "linux")
+    assert app_registry.has_visible_window("chrome.exe") is True

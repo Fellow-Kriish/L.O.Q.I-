@@ -8,16 +8,13 @@ nothing, it returns a confident invented sentence, which then routes as though
 the user had actually said it.
 
 No microphone is involved: the capture loop is driven by a scripted VAD and a
-fake stream. The module still imports pyaudio and webrtcvad at the top, so these
-skip where the audio stack isn't installed (CI installs no audio wheels).
+fake stream. recorder.py imports pyaudio and webrtcvad lazily (first mic open /
+first record()), and both are replaced here before either happens, so these run
+in CI with no audio wheels installed — they used to importorskip and therefore
+never ran where it mattered.
 """
 
-import pytest
-
-pytest.importorskip("pyaudio", reason="audio stack not installed")
-pytest.importorskip("webrtcvad", reason="audio stack not installed")
-
-from recorder import Recorder  # noqa: E402
+from recorder import Recorder
 
 _CHUNK = b"\x00" * 960   # one 30ms frame, 16kHz 16-bit mono
 
@@ -150,3 +147,21 @@ def test_the_start_of_the_utterance_is_not_clipped(monkeypatch):
     # Without the pre-roll flush the first 3 speech frames would be missing and
     # this would be 5.
     assert len(audio) - 44 == 8 * 960
+
+
+def test_recorder_imports_without_the_audio_stack(monkeypatch):
+    """
+    Guards the lazy imports. A None entry in sys.modules makes `import pyaudio`
+    raise ImportError even where the wheel is installed, so this simulates CI
+    on a dev machine. If a top-level audio import comes back, this fails here
+    instead of the whole file silently disappearing from CI.
+    """
+    import importlib
+    import sys
+
+    monkeypatch.setitem(sys.modules, "pyaudio", None)
+    monkeypatch.setitem(sys.modules, "webrtcvad", None)
+    monkeypatch.delitem(sys.modules, "recorder", raising=False)
+
+    module = importlib.import_module("recorder")
+    module.Recorder()   # construction must not touch the audio stack either

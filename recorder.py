@@ -6,17 +6,27 @@ Uses webrtcvad to detect speech start/end — stops recording after
 sustained silence, not a fixed timer.
 
 Returns raw audio bytes ready for faster-whisper.
+
+pyaudio and webrtcvad are imported lazily — at first mic open / first
+record() — not at module load. The endpointing logic in record() is pure
+Python and is tested in CI, which installs no audio wheels; a top-level import
+would make the whole module unimportable there and the tests would only ever
+skip.
 """
+
+from __future__ import annotations
 
 import collections
 import io
 import wave
-
-import pyaudio
-import webrtcvad
+from typing import TYPE_CHECKING
 
 import config
 from audio_devices import resolve_mic_index
+
+if TYPE_CHECKING:
+    import pyaudio
+    import webrtcvad
 
 
 class Recorder:
@@ -42,7 +52,10 @@ class Recorder:
         self.min_speech_ms = min_speech_ms
         self.max_utterance_ms = max_utterance_ms
 
-        self.vad = webrtcvad.Vad(vad_aggressiveness)
+        self.vad_aggressiveness = vad_aggressiveness
+        # Built on first record() so constructing a Recorder needs no audio
+        # stack. Tests replace it with a scripted VAD before that happens.
+        self.vad: webrtcvad.Vad | None = None
         self._pa: pyaudio.PyAudio | None = None
         # Annotated rather than left to inference: bare `= None` infers the type
         # as None, and every later assignment of a real stream then only passes
@@ -51,6 +64,8 @@ class Recorder:
 
     def _open_stream(self):
         """Open the PyAudio mic stream."""
+        import pyaudio
+
         if self._pa is None:
             self._pa = pyaudio.PyAudio()
         assert self._pa is not None
@@ -104,6 +119,12 @@ class Recorder:
         Returns:
             WAV file content as bytes, or empty bytes on timeout/no speech.
         """
+        if self.vad is None:
+            import webrtcvad
+
+            self.vad = webrtcvad.Vad(self.vad_aggressiveness)
+        vad = self.vad
+
         self._open_stream()
 
         frames: list[bytes] = []
@@ -128,7 +149,7 @@ class Recorder:
                 chunk = self._stream.read(self.chunk_samples, exception_on_overflow=False)
                 total_frames += 1
 
-                is_speech = self.vad.is_speech(chunk, self.sample_rate)
+                is_speech = vad.is_speech(chunk, self.sample_rate)
 
                 if not speech_started:
                     # Safety: abort if no speech starts within the wake timeout.
