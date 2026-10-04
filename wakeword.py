@@ -9,6 +9,7 @@ Thread is never blocked by TTS playback or in-flight LLM calls.
 """
 
 import threading
+import contextlib
 from collections.abc import Callable
 
 import numpy as np
@@ -16,7 +17,8 @@ import pyaudio
 from openwakeword.model import Model as OWWModel
 
 import config
-from audio_devices import resolve_mic_index
+from ui_runtime import runtime
+from audio_devices import publish_mic_name, resolve_mic_index
 
 
 class WakeWordListener:
@@ -92,9 +94,9 @@ class WakeWordListener:
         stream = None
 
         def _open_stream():
-            mic_idx = resolve_mic_index(pa)
+            mic_idx = resolve_mic_index(pa, refresh=runtime.snapshot()['state'] == 'unavailable')
             try:
-                return pa.open(
+                opened = pa.open(
                     format=pyaudio.paInt16,
                     channels=1,
                     rate=self.sample_rate,
@@ -102,12 +104,14 @@ class WakeWordListener:
                     input_device_index=mic_idx,
                     frames_per_buffer=self.chunk_samples,
                 )
+                publish_mic_name(pa, mic_idx)
+                return opened
             except Exception as e:
                 # The resolved device can still be busy or claimed by another app.
                 if mic_idx is None:
                     raise
                 print(f"  ⚠️  Failed to open mic index {mic_idx} ({e}). Falling back to default.")
-                return pa.open(
+                opened = pa.open(
                     format=pyaudio.paInt16,
                     channels=1,
                     rate=self.sample_rate,
@@ -115,10 +119,10 @@ class WakeWordListener:
                     input_device_index=None,
                     frames_per_buffer=self.chunk_samples,
                 )
+                publish_mic_name(pa, None)
+                return opened
 
         try:
-            stream = _open_stream()
-
             while not self._stop_event.is_set():
                 if not self._paused.is_set():
                     # Close the PyAudio stream to prevent buffer buildup and host errors
@@ -129,6 +133,7 @@ class WakeWordListener:
                         except Exception:
                             pass
                         stream = None
+                        runtime.update(microphoneReady=False)
 
                     # Block until resumed
                     self._paused.wait()
@@ -136,22 +141,39 @@ class WakeWordListener:
                     if self._stop_event.is_set():
                         break
 
-                    # Resumed: reopen the stream
+                if stream is None:
                     try:
                         stream = _open_stream()
+                        runtime.update(state='idle', microphoneReady=True, error='', errorCode='')
                     except Exception as e:
-                        print(f"  ❌ Failed to reopen mic stream: {e}")
-                        break
+                        runtime.microphone_error(e)
+                        pa.terminate()
+                        pa = pyaudio.PyAudio()
+                        self._stop_event.wait(1)
+                        continue
 
                 try:
                     if stream:
                         chunk_bytes = stream.read(self.chunk_samples, exception_on_overflow=False)
                     else:
                         continue
-                except OSError:
+                except OSError as error:
+                    runtime.microphone_error(error)
+                    with contextlib.suppress(OSError):
+                        stream.stop_stream()
+                    with contextlib.suppress(OSError):
+                        stream.close()
+                    stream = None
+                    pa.terminate()
+                    pa = pyaudio.PyAudio()
+                    self._stop_event.wait(.5)
                     continue
 
                 # Convert to int16 numpy array
+                if runtime.paused.is_set():
+                    continue
+                if runtime.snapshot()['state'] == 'unavailable':
+                    runtime.update(state='idle', microphoneReady=True, error='', errorCode='')
                 chunk = np.frombuffer(chunk_bytes, dtype=np.int16)
 
                 # Get prediction
@@ -169,6 +191,7 @@ class WakeWordListener:
                         break
 
         except Exception as e:
+            runtime.microphone_error(e)
             print(f"  ❌ Wake word listener error: {e}")
         finally:
             if stream:

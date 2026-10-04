@@ -31,6 +31,7 @@ import traceback
 import metrics
 import timers
 import user_profile
+from ui_runtime import runtime
 from actions import ActionUnavailable, execute
 from barge_in import BargeInListener
 from confirm import confirm_action
@@ -79,6 +80,7 @@ def main():
     # TTS (load once, keep resident)
     from tts import TTS
     tts = TTS()
+    runtime.tts = tts
 
     # Recorder
     from recorder import Recorder
@@ -90,7 +92,9 @@ def main():
 
     def speak(text: str):
         """TTS speak wrapper."""
+        previous_state = runtime.snapshot()['state']
         tts.speak(text)
+        runtime.update(state='paused' if runtime.paused.is_set() else previous_state, audioLevel=0)
 
     if args.no_wake:
         # ----------------------------------------------------------
@@ -149,6 +153,8 @@ def main():
             wake_event.set()
 
         wake_listener = WakeWordListener(on_detected=on_wake)
+        runtime.wake_listener = wake_listener
+        runtime.update(online=True, error='')
         wake_listener.start()
 
         speak("L.O.Q.I. online. Say the wake word when you need me.")
@@ -156,9 +162,15 @@ def main():
 
         try:
             while True:
+                if runtime.shutdown.is_set():
+                    break
+                if runtime.paused.is_set():
+                    wake_event.clear()
+                    time.sleep(0.1)
+                    continue
                 # Wait for the wake word — or a half-second poll tick when a
                 # timer is running, so an idle session still announces on time.
-                if wake_event.wait(timeout=timers.poll_interval_s()):
+                if wake_event.wait(timeout=timers.poll_interval_s() or .5):
                     wake_event.clear()
                 else:
                     _announce_due(speak)
@@ -169,6 +181,8 @@ def main():
                     # lives in the finally below, not at each exit point: an
                     # exception mid-turn must never leave the listener paused,
                     # or the assistant goes deaf to the wake word.
+                    runtime.in_turn.set()
+                    runtime.interrupted.clear()
                     wake_listener.pause()
                     try:
                         # Acknowledgment
@@ -184,6 +198,7 @@ def main():
 
                         # Transcribe
                         with t.stage(metrics.STT):
+                            runtime.update(state='processing', audioLevel=0)
                             text = stt.transcribe(wav_bytes)
                         if not text:
                             with t.stage(metrics.ACK):
@@ -202,11 +217,15 @@ def main():
                     finally:
                         # Every exit from this turn — normal, continue, or
                         # exception — hands the mic back to the wake listener.
-                        wake_listener.resume()
+                        runtime.in_turn.clear()
+                        if not runtime.paused.is_set():
+                            tts.reset()
+                            wake_listener.resume()
                     print(f"  ⏱️ {t.summary()}")
 
         except KeyboardInterrupt:
             print("\n  Shutting down...")
+        finally:
             wake_listener.stop()
             recorder.cleanup()
             print("  Goodbye!")
@@ -244,6 +263,10 @@ def _process_command(text: str, speak_fn, brain, recorder=None, stt=None, tts=No
             turn.path = "wake_echo"
         return
 
+    if runtime.paused.is_set() or runtime.shutdown.is_set() or runtime.interrupted.is_set():
+        return
+    runtime.update(state='processing', request=text, route='local', audioLevel=0)
+
     if turn is None:
         def t_stage(name: str) -> contextlib.AbstractContextManager:
             return contextlib.nullcontext()
@@ -264,7 +287,7 @@ def _process_command(text: str, speak_fn, brain, recorder=None, stt=None, tts=No
         action_desc = intent.description(result.args)
 
         with t_stage(metrics.CONFIRM):
-            confirmed = confirm_action(
+            confirmed = runtime.confirm_close(result.args.get('app_name', 'the app'), speak_fn) if intent.name == 'close_app' and runtime.ui_enabled else confirm_action(
                 intent.tier, action_desc,
                 tts_fn=speak_fn,
                 recorder_fn=recorder.record if recorder else None,
@@ -274,6 +297,10 @@ def _process_command(text: str, speak_fn, brain, recorder=None, stt=None, tts=No
             if turn:
                 turn.path = "cancelled"
             speak_fn("Okay, cancelled.")
+            runtime.feedback('Action cancelled', 'cancelled')
+            return
+
+        if runtime.paused.is_set() or runtime.shutdown.is_set() or runtime.interrupted.is_set():
             return
 
         try:
@@ -290,6 +317,7 @@ def _process_command(text: str, speak_fn, brain, recorder=None, stt=None, tts=No
             print(f"  {'✅' if success else '❌'} {response}")
             with t_stage(metrics.TTS):
                 speak_fn(response)
+            runtime.feedback(response, 'success' if success else 'error')
             return
     else:
         print("  🧠 No intent match → Groq fallback")
@@ -297,6 +325,8 @@ def _process_command(text: str, speak_fn, brain, recorder=None, stt=None, tts=No
     if turn:
         turn.path = "llm"
     _ask_brain(text, speak_fn, brain, tts=tts, stt=stt, turn=turn)
+    if runtime.snapshot()['cloudError']:
+        runtime.feedback('Cloud unavailable · Local commands still work', 'error')
 
 
 def _ask_brain(text: str, speak_fn, brain, tts=None, stt=None, turn=None) -> None:
@@ -319,6 +349,10 @@ def _ask_brain(text: str, speak_fn, brain, tts=None, stt=None, turn=None) -> Non
     intents the router should learn to handle deterministically.
     """
     stop_event = threading.Event()
+    if runtime.paused.is_set() or runtime.shutdown.is_set() or runtime.interrupted.is_set():
+        return
+    runtime.stop_event = stop_event
+    runtime.update(state='processing', route='cloud', cloudError='')
 
     # Start barge-in listener if we have the audio components.
     listener: BargeInListener | None = None
@@ -358,6 +392,8 @@ def _ask_brain(text: str, speak_fn, brain, tts=None, stt=None, turn=None) -> Non
             listener.stop()
 
     if stop_event.is_set():
+        if runtime.paused.is_set() or runtime.shutdown.is_set():
+            return
         # Kill any audio still playing and wipe the TTS stopped flag so
         # the acknowledgment line can play.
         if tts is not None:

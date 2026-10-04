@@ -51,6 +51,7 @@ import pyaudio
 import webrtcvad
 
 from audio_devices import resolve_mic_index
+from ui_runtime import runtime
 from logging_setup import get_logger
 
 if TYPE_CHECKING:
@@ -161,7 +162,9 @@ class BargeInListener:
                 input_device_index=mic_idx,
                 frames_per_buffer=_CHUNK_SAMPLES,
             )
+            runtime.update(microphoneReady=True)
         except Exception as e:
+            runtime.update(microphoneReady=False)
             log.warning("Barge-in reader: could not open mic stream (%s).", e)
             pa.terminate()
             return
@@ -184,6 +187,7 @@ class BargeInListener:
                 pass
             pa.terminate()
             # Sentinel: unblock transcriber.
+            runtime.update(microphoneReady=False)
             with contextlib.suppress(queue.Full):
                 self._burst_queue.put_nowait(None)
 

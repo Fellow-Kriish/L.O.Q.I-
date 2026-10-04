@@ -10,6 +10,18 @@ machine; only the LLM fallback leaves it.
 
 ---
 
+## Desktop voice interface
+
+L.O.Q.I. now includes a focused React voice interface and a Windows desktop
+host with a synchronized, always-on-top widget. The host uses the same Python
+router and action modules as the original CLI, not a separate assistant.
+
+See [desktop setup and controls](runtime/README.md) for installation, native
+launch, microphone status, global shortcuts, and optional listening cues.
+The original `python main.py`, `--text`, and `--no-wake` entrypoints remain.
+
+---
+
 ## How it works
 
 ```

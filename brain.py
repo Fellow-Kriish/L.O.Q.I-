@@ -35,6 +35,7 @@ from groq import (
 )
 
 import config
+from ui_runtime import runtime
 import user_profile
 from logging_setup import get_logger
 
@@ -108,12 +109,14 @@ class Brain:
                         sentences are yielded.
         """
         if not self.client:
+            runtime.update(cloudError='Cloud unavailable: no API key configured. Local commands are still available.')
             yield _NO_KEY_MSG
             return
 
         messages = self._prepare(text)
         stream = self._create(messages, stream=True)
         if stream is None:
+            runtime.update(cloudError='Cloud unavailable. Check your connection or credentials. Local commands are still available.')
             yield _ERROR_MSG
             return
 
@@ -143,6 +146,7 @@ class Brain:
                             yield sentence
                     buffer = sentences[-1]
         except (APIStatusError, APIConnectionError) as e:
+            runtime.update(cloudError='Cloud response interrupted. Local commands are still available.')
             log.error("Groq stream interrupted mid-response: %s", e)
             if not full_response:
                 yield _ERROR_MSG
