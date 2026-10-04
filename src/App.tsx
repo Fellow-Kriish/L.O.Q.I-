@@ -28,14 +28,20 @@ function Icon({ name }: { name: 'pause' | 'play' | 'stop' | 'expand' | 'close' |
 
 function Aperture({ state, small = false, id, level = 0 }: { state: VoiceState; small?: boolean; id: string; level?: number }) {
   const quiet = state === 'paused' || state === 'unavailable'
-  return <svg className={`aperture ${small ? 'aperture-small' : ''} ${quiet ? 'aperture-quiet' : ''}`} viewBox="0 0 280 280" fill="none" aria-hidden="true">
-    <defs><linearGradient id={id} x1="45" y1="40" x2="240" y2="245" gradientUnits="userSpaceOnUse"><stop stopColor="#43D6C4" /><stop offset=".48" stopColor="#19B7A5" /><stop offset="1" stopColor="#328EE8" /></linearGradient></defs>
-    {!small && <><circle cx="140" cy="140" r="135" className="aperture-guide" /><circle cx="140" cy="140" r="113" className="aperture-guide" /><path d="M140 0v7m0 266v7M0 140h7m266 0h7" className="aperture-guide" /></>}
+  const responding = state === 'listening' || state === 'speaking'
+  const energy = responding && Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
+  return <svg className={`aperture ${small ? 'aperture-small' : 'aperture-hero'} ${quiet ? 'aperture-quiet' : ''}`} viewBox="0 0 280 280" fill="none" aria-hidden="true">
+    <defs><linearGradient id={id} x1="45" y1="40" x2="240" y2="245" gradientUnits="userSpaceOnUse"><stop stopColor="#43D6C4" /><stop offset=".48" stopColor="#19B7A5" /><stop offset="1" stopColor="#328EE8" /></linearGradient><radialGradient id={`${id}-halo`}><stop stopColor="var(--teal)" stopOpacity=".16" /><stop offset=".62" stopColor="var(--teal)" stopOpacity=".06" /><stop offset="1" stopColor="var(--teal)" stopOpacity="0" /></radialGradient></defs>
+    {!small && <><circle className="aperture-halo" cx="140" cy="140" r={112 + energy * 18} fill={`url(#${id}-halo)`} opacity={quiet ? 0 : .5 + energy * .5} /><circle cx="140" cy="140" r="131" className="aperture-guide" /><circle cx="140" cy="140" r="115" className="aperture-guide" strokeDasharray="1 11" /><path d="M140 3v6m0 262v6M3 140h6m262 0h6" className="aperture-guide" /></>}
     <g className="aperture-response" transform={`translate(140 140) scale(${1 + ((state === 'listening' || state === 'speaking') ? level * .035 : 0)}) translate(-140 -140)`} stroke={quiet ? 'var(--quiet-aperture)' : `url(#${id})`} strokeLinecap="round">
-      <circle cx="140" cy="140" r="94" strokeWidth="13" strokeDasharray="430 161" transform="rotate(-44 140 140)" />
-      <circle cx="140" cy="140" r="72" strokeWidth="12" strokeDasharray="305 148" transform="rotate(132 140 140)" opacity=".84" />
-      <circle cx="140" cy="140" r="50" strokeWidth="11" strokeDasharray="222 92" transform="rotate(-48 140 140)" opacity=".68" />
-      <path d={state === 'paused' ? 'M134 131v18m12-18v18' : state === 'unavailable' ? 'm134 134 12 12m0-12-12 12' : 'M140 130v20'} strokeWidth="6" />
+      <circle className={!small ? 'aperture-ring' : undefined} cx="140" cy="140" r="94" strokeWidth={small ? 13 : 7} strokeDasharray="430 161" transform={`rotate(${-44 + (small ? 0 : energy * 9)} 140 140)`} />
+      <circle className={!small ? 'aperture-ring' : undefined} cx="140" cy="140" r="72" strokeWidth={small ? 12 : 6} strokeDasharray="305 148" transform={`rotate(${132 - (small ? 0 : energy * 14)} 140 140)`} opacity=".84" />
+      <circle className={!small ? 'aperture-ring' : undefined} cx="140" cy="140" r="50" strokeWidth={small ? 11 : 4} strokeDasharray="222 92" transform={`rotate(${-48 + (small ? 0 : energy * 18)} 140 140)`} opacity=".68" />
+      {!small && !quiet ? <><circle cx="140" cy="140" r="31" className="aperture-core" />{[.35, .7, 1, .7, .35].map((weight, index) => {
+        const height = 5 + energy * weight * (state === 'speaking' ? 34 : 24)
+        const position = 124 + index * 8
+        return <path key={index} className="aperture-voice-bar" d={`M${position} ${140 - height / 2}v${height}`} strokeWidth="3.5" />
+      })}</> : <path d={state === 'paused' ? 'M134 131v18m12-18v18' : state === 'unavailable' ? 'm134 134 12 12m0-12-12 12' : 'M140 130v20'} strokeWidth="6" />}
     </g>
   </svg>
 }
