@@ -1,0 +1,5 @@
+-r ../requirements.txt
+websockets==15.0.1
+pywebview==6.1
+pystray==0.19.5
+Pillow==11.3.0

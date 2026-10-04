@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import config
 from logging_setup import get_logger
+from ui_runtime import runtime
 
 log = get_logger(__name__)
 
@@ -103,3 +104,11 @@ def describe_devices(pa) -> str:
     for idx, name in _input_devices(pa):
         lines.append(f"  [{idx:>2}] {name}")
     return "\n".join(lines)
+
+
+def publish_mic_name(pa, index):
+    try:
+        device = pa.get_default_input_device_info() if index is None else pa.get_device_info_by_index(index)
+        runtime.update(microphoneName=str(device.get('name', ''))[:100])
+    except (OSError, ValueError):
+        runtime.update(microphoneName='')

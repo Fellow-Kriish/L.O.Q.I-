@@ -27,6 +27,7 @@ import time
 import warnings
 
 import numpy as np
+from ui_runtime import runtime
 import sounddevice as sd
 
 # Suppress noisy ML library warnings before importing Kokoro
@@ -299,8 +300,30 @@ class TTS:
     def _play(self, audio: np.ndarray) -> None:
         if self._stopped.is_set():
             return
-        sd.play(audio, samplerate=self.sample_rate)
-        sd.wait()
+        finished = threading.Event()
+        position = 0
+        runtime.update(state='speaking', audioLevel=0)
+
+        def output(outdata, frames, timing, status):
+            nonlocal position
+            outdata.fill(0)
+            if self._stopped.is_set() or runtime.shutdown.is_set():
+                raise sd.CallbackStop
+            block = audio[position:position + frames]
+            if len(block):
+                outdata[:len(block), 0] = block
+                runtime.audio(block)
+            position += len(block)
+            if len(block) < frames:
+                raise sd.CallbackStop
+
+        try:
+            with sd.OutputStream(samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=1024, callback=output, finished_callback=finished.set):
+                while not finished.wait(0.05):
+                    if self._stopped.is_set() or runtime.shutdown.is_set():
+                        break
+        finally:
+            runtime.update(audioLevel=0)
 
     def _synth(self, text: str) -> np.ndarray:
         """Synthesize to an array. Caller must hold the lock."""

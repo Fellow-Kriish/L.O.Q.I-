@@ -17,12 +17,14 @@ skip.
 from __future__ import annotations
 
 import collections
+import contextlib
 import io
 import wave
 from typing import TYPE_CHECKING
 
 import config
-from audio_devices import resolve_mic_index
+from ui_runtime import runtime
+from audio_devices import publish_mic_name, resolve_mic_index
 
 if TYPE_CHECKING:
     import pyaudio
@@ -79,6 +81,7 @@ class Recorder:
                 input_device_index=mic_idx,
                 frames_per_buffer=self.chunk_samples,
             )
+            publish_mic_name(self._pa, mic_idx)
         except Exception as e:
             # The resolved device can still be busy or claimed by another app.
             if mic_idx is None:
@@ -92,12 +95,15 @@ class Recorder:
                 input_device_index=None,
                 frames_per_buffer=self.chunk_samples,
             )
+            publish_mic_name(self._pa, None)
 
     def _close_stream(self):
         """Close the mic stream (not PyAudio itself — keep it alive)."""
         if self._stream:
-            self._stream.stop_stream()
-            self._stream.close()
+            with contextlib.suppress(OSError):
+                self._stream.stop_stream()
+            with contextlib.suppress(OSError):
+                self._stream.close()
             self._stream = None
 
     def record(self, wake_timeout_ms: int = config.VAD_WAKE_TIMEOUT_MS) -> bytes:
@@ -125,7 +131,17 @@ class Recorder:
             self.vad = webrtcvad.Vad(self.vad_aggressiveness)
         vad = self.vad
 
-        self._open_stream()
+        try:
+            self._open_stream()
+            if runtime.data['soundCues'] and runtime.data['soundCuesAvailable']:
+                self._stream.stop_stream()
+                runtime.cue('start')
+                self._stream.start_stream()
+        except OSError as error:
+            runtime.microphone_error(error)
+            self._close_stream()
+            raise
+        runtime.update(state='listening', microphoneReady=True, audioLevel=0, feedback=None)
 
         frames: list[bytes] = []
         speech_started = False
@@ -145,8 +161,11 @@ class Recorder:
 
         try:
             while True:
+                if runtime.paused.is_set() or runtime.shutdown.is_set() or runtime.interrupted.is_set():
+                    return b''
                 assert self._stream is not None
                 chunk = self._stream.read(self.chunk_samples, exception_on_overflow=False)
+                runtime.audio(chunk, pcm=True)
                 total_frames += 1
 
                 is_speech = vad.is_speech(chunk, self.sample_rate)
@@ -193,8 +212,14 @@ class Recorder:
                         print("  ⏱️  Maximum utterance length reached.")
                         break
 
+        except OSError as error:
+            runtime.microphone_error(error)
+            raise
         finally:
             self._close_stream()
+            runtime.update(audioLevel=0, microphoneReady=False)
+            if not runtime.paused.is_set() and not runtime.interrupted.is_set():
+                runtime.cue('end')
 
         if not frames:
             return b""
