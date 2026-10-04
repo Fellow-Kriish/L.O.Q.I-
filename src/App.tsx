@@ -122,7 +122,6 @@ function AssistantView({ runtime }: { runtime: ReturnType<typeof useRuntime> }) 
         <span className="control-note">{offline ? 'Controls become available when the runtime is ready.' : unavailable ? 'Choose an available microphone in Windows sound settings.' : paused ? 'Resume when you’re ready.' : speaking ? 'Stops this response, not the assistant.' : 'Wake-word listening pauses until you resume.'}</span>
         {!unavailable && !confirmation && (speaking || runtime.shortcuts.toggle) && <div className="shortcut-hint"><span>{speaking ? 'Stop response' : 'Pause / resume'}</span><kbd>{speaking ? 'Esc' : runtime.shortcuts.toggle.split('+').join(' + ')}</kbd></div>}
       </div>
-      <div className="privacy-note"><Icon name="shield" /><span>Your voice stays on this PC.</span><span className="privacy-detail">Local speech recognition & voice output</span></div>
     </main>}
 
     {widgetVisible && nativeSurface !== 'full' && <aside className={`widget ${expandedWidget ? 'widget-expanded' : ''} ${confirmation ? 'widget-approval' : ''}`} aria-label="L.O.Q.I. desktop widget">
