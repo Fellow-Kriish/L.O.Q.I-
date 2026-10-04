@@ -46,6 +46,7 @@ installed ones, because whether an app can be closed depends on live state.
 import csv
 import io
 import json
+import os
 import subprocess
 import threading
 from collections.abc import Iterable
@@ -87,11 +88,9 @@ APPS: dict[str, str] = {
     "windows terminal": "wt.exe",
 
     # --- Communication ---
-    "discord":          r"C:\Users\Lenovo\AppData\Local\Discord\Update.exe --processStart Discord.exe",
     "whatsapp":         "whatsapp:",
 
     # --- Media ---
-    "spotify":          r"C:\Users\Lenovo\AppData\Roaming\Spotify\Spotify.exe",
     "vlc":              r"C:\Program Files\VideoLAN\VLC\vlc.exe",
 
     # --- Productivity ---
@@ -102,6 +101,22 @@ APPS: dict[str, str] = {
     # --- Gaming ---
     "steam":            r"C:\Program Files (x86)\Steam\steam.exe",
 }
+
+# Per-user installs (Discord, Spotify) live under the *current* profile's
+# AppData, so their paths are derived from the environment — a pinned
+# C:\Users\<name> path only works on the account that wrote it. When the exe
+# is not where this profile keeps it, the alias is left out entirely and
+# resolve() falls to the StartApps tier, which finds the real install
+# wherever it lives. (On non-Windows CI the env vars are unset: no aliases.)
+_LOCAL_APPDATA = os.environ.get("LOCALAPPDATA", "")
+_DISCORD_UPDATE = os.path.join(_LOCAL_APPDATA, "Discord", "Update.exe")
+if os.path.isfile(_DISCORD_UPDATE):
+    APPS["discord"] = f"{_DISCORD_UPDATE} --processStart Discord.exe"
+
+_ROAMING_APPDATA = os.environ.get("APPDATA", "")
+_SPOTIFY_EXE = os.path.join(_ROAMING_APPDATA, "Spotify", "Spotify.exe")
+if os.path.isfile(_SPOTIFY_EXE):
+    APPS["spotify"] = _SPOTIFY_EXE
 
 MatchSource = Literal["alias", "exact", "fuzzy"]
 """How a name was resolved: pinned by hand, matched exactly, or scored."""

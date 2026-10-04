@@ -120,6 +120,39 @@ LOQI_MIC_DEVICE_NAME=Yeti
 Existing code reads the familiar uppercase constants (`config.GROQ_MODEL`, …); those
 are kept as backward-compatible aliases over the settings model, so both styles work.
 
+### Your profile
+
+Four settings describe the user rather than the machine, and they reach both halves of
+the assistant: `user_profile.prompt_block()` appends them to the system prompt the cloud
+model sees, and the local skills read the same values to decide what "here" and
+"degrees" mean.
+
+```
+LOQI_USER_NAME=Krish
+LOQI_USER_CITY=Indore
+LOQI_UNITS=metric
+LOQI_USER_ABOUT=Computer science student. Usually working late.
+```
+
+`LOQI_USER_CITY` is what a bare "what's the weather" reports on, and it defaults to the
+author's city — worth setting first on a fresh clone, since it is now also what the model
+is told about where you live. `LOQI_UNITS` (`metric` or `imperial`) governs the forecast
+and spoken answers alike. `LOQI_USER_ABOUT` is free text with no format; anything past
+~400 characters is truncated so it cannot crowd out the persona prompt, and the log says
+when that happens.
+
+These replace the older `LOQI_WEATHER_DEFAULT_CITY` and `LOQI_WEATHER_UNITS`, which were
+always facts about the user under a skill's name. Both old names still work as aliases,
+so an existing `.env` needs no edit — but they now set the profile, which means the model
+and the forecast can no longer disagree about where you are.
+
+The profile is read once at startup and is fixed for the process. There is deliberately
+no spoken "remember that I …": a store the assistant can write to from model output is a
+prompt-injection surface, so that feature belongs behind the confirm gate rather than
+behind a setter. LOQI echoes what it read on the line below the banner, because a profile
+that silently failed to load is otherwise invisible until an answer comes back subtly
+wrong.
+
 ### Microphone selection
 
 By default LOQI uses the system default input. To target a specific mic, set
@@ -174,6 +207,7 @@ Flat modules, run directly (not packaged):
 | ------------------- | ----------------------------------------------------- |
 | `main.py`           | Entry point, mode dispatch, the main loop             |
 | `config.py`         | Typed settings + backward-compatible constants        |
+| `user_profile.py`   | The user's own facts, shared by the model and skills  |
 | `wakeword.py`       | Wake-word detection (openWakeWord)                    |
 | `recorder.py`       | VAD-gated microphone capture                          |
 | `audio_devices.py`  | Microphone resolution shared by recorder + wake word  |
@@ -184,5 +218,9 @@ Flat modules, run directly (not packaged):
 | `confirm.py`        | Read-back confirmation gate for higher-tier actions   |
 | `brain.py`          | Groq LLM fallback                                     |
 | `tts.py`            | Text-to-speech (Kokoro)                               |
+| `barge_in.py`       | Listens while speaking, for spoken stop-phrases       |
+| `weather.py`        | Keyless forecasts (Open-Meteo)                        |
+| `timers.py`         | Countdown timers and their due-alert queue            |
+| `metrics.py`        | Per-turn latency records + the report reader          |
 | `fallback_log.py`   | Logs unmatched utterances for router improvement      |
 | `logging_setup.py`  | Console + rotating-file logging                       |

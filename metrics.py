@@ -30,7 +30,7 @@ import statistics
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import datetime
 
 import config
@@ -47,12 +47,29 @@ ROUTE = "route"                      # regex router
 CONFIRM = "confirm"                  # tier 2/3 gate, incl. waiting on the user
 ACTION = "action"                    # deterministic handler
 LLM_FIRST = "llm_first_sentence"     # turn start → first sentence spoken
-LLM_TOTAL = "llm_total"              # whole stream consumed
+LLM_TOTAL = "llm_total"              # whole stream consumed *and spoken*
 TTS = "tts"                          # synthesis + playback, summed over sentences
+
+# llm_total covers generation and playback interleaved, because speak() blocks
+# the streaming loop today; llm_total minus tts is the generation time. Once
+# streaming TTS lands and playback moves off this thread, the two separate on
+# their own and llm_total becomes generation alone.
 
 # Chronological order for the console summary. Stages not listed here still
 # appear in the log; they just sort last.
 _STAGE_ORDER = (ACK, RECORD, STT, ROUTE, CONFIRM, ACTION, LLM_FIRST, LLM_TOTAL, TTS)
+
+# Which branch the turn took — the dimension the whole log is grouped by.
+PATH_ACTION = "action"           # router hit, handler ran
+PATH_LLM = "llm"                 # cloud fallback answered
+PATH_CANCELLED = "cancelled"     # user declined at the confirm gate
+PATH_NO_AUDIO = "no_audio"       # VAD captured nothing
+PATH_NO_SPEECH = "no_speech"     # audio captured, STT returned nothing
+
+# no_audio and no_speech are tracked because they cost the user a full wake,
+# an acknowledgement and a pause, and returned nothing. A build where a third
+# of turns end here has a microphone problem, not a model problem, and that is
+# invisible if failed turns are simply not recorded.
 
 _write_lock = threading.Lock()
 
@@ -83,7 +100,12 @@ class Turn:
 
     # ------------------------------------------------------------------ timing
     @contextmanager
-    def stage(self, name: str) -> Iterator[None]:
+    def stage(
+        self,
+        name: str,
+        *,
+        expected: type[BaseException] | tuple[type[BaseException], ...] = (),
+    ) -> Iterator[None]:
         """
         Time a block and record it under ``name``.
 
@@ -94,15 +116,35 @@ class Turn:
         is flagged as failed. A stage that blew up after four seconds is
         precisely the data point you want, and that is the worst moment to drop
         it.
+
+        ``expected`` lists exceptions used as control flow rather than faults —
+        ActionUnavailable, say, which means "this handler can't do the job, let
+        the LLM try". Those are timed like any other outcome but not flagged,
+        so the log doesn't report a designed fall-through as a failure.
         """
         t0 = time.perf_counter()
         try:
             yield
+        except expected:
+            self._add(name, (time.perf_counter() - t0) * 1000.0)
+            raise
         except BaseException:
             self._add(name, (time.perf_counter() - t0) * 1000.0, failed=True)
             raise
         else:
             self._add(name, (time.perf_counter() - t0) * 1000.0)
+
+    def stage_if(self, condition: bool, name: str) -> AbstractContextManager[None]:
+        """
+        :meth:`stage` when ``condition`` holds, otherwise a no-op.
+
+        For stages that only exist on some turns — the confirm gate fires on
+        tier 2+ and returns instantly otherwise, and recording those instant
+        passes would blend "the gate did nothing" into the same distribution as
+        "the user thought about it for four seconds", making both numbers
+        useless.
+        """
+        return self.stage(name) if condition else nullcontext()
 
     def first(self, name: str) -> None:
         """
@@ -133,9 +175,14 @@ class Turn:
             name = item[0]
             return (_STAGE_ORDER.index(name) if name in _STAGE_ORDER else len(_STAGE_ORDER), name)
 
-        parts = [f"{name} {_human_ms(ms)}" for name, ms in sorted(self.stages_ms.items(), key=order)]
-        total = _human_ms(self.total_ms or (time.perf_counter() - self._t0) * 1000.0)
-        return f"{total} total  ·  " + " · ".join(parts) if parts else f"{total} total"
+        elapsed = self.total_ms or (time.perf_counter() - self._t0) * 1000.0
+        line = f"{_human_ms(elapsed)} total"
+        if self.stages_ms:
+            line += "  ·  " + " · ".join(
+                f"{name} {_human_ms(ms)}"
+                for name, ms in sorted(self.stages_ms.items(), key=order)
+            )
+        return line
 
     def as_record(self) -> dict:
         """The JSONL record for this turn."""

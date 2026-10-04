@@ -44,6 +44,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         protected_namespaces=(),
+        # Fields with an explicit validation_alias (groq_api_key, user_city,
+        # units) are otherwise reachable *only* by that alias: Settings(units=...)
+        # would silently hand back the default instead of raising, which is the
+        # kind of bug that survives review. Accept the field name too.
+        populate_by_name=True,
     )
 
     # -- Audio ---------------------------------------------------------------
@@ -63,6 +68,11 @@ class Settings(BaseSettings):
     vad_min_speech_ms: int = 300                     # min speech before accepting
     vad_wake_timeout_ms: int = 8000                  # max wait for speech onset post-wake
     vad_confirm_timeout_ms: int = 5000               # shorter timeout for yes/no confirm
+    # Hard ceiling on one recording. A mic emitting constant noise scores every
+    # frame as speech, so the silence detector never trips and the capture loop
+    # would run forever with the wake listener paused. 15s is far longer than
+    # any command and still bounds that failure.
+    vad_max_utterance_ms: int = Field(15000, gt=0)
 
     # -- STT (faster-whisper) ------------------------------------------------
     # Defaults target a CUDA GPU when present, with automatic CPU fallback in
@@ -76,7 +86,7 @@ class Settings(BaseSettings):
     stt_initial_prompt: str = (
         "Voice commands for Loki, a personal assistant. Open Notepad, Chrome, "
         "Firefox, Edge, Spotify, Discord, VLC, Steam, Word, Excel. Play music, "
-        "search YouTube and Google. Weather in Delhi, Mumbai, Bangalore, Chennai."
+        "search YouTube and Google. Weather in Indore, Bangalore, Chennai."
     )
 
     # -- TTS (Kokoro) --------------------------------------------------------
@@ -84,12 +94,36 @@ class Settings(BaseSettings):
     tts_voice: str = "af_heart"                      # see Kokoro VOICES.md
     tts_sample_rate: int = 24000                     # Kokoro outputs 24kHz
 
+    # -- User profile --------------------------------------------------------
+    # Facts about the user, shared by both halves of the assistant: the cloud
+    # model (user_profile.prompt_block() appends them to the system prompt) and
+    # the local skills (the weather place and unit system *are* these values,
+    # not copies kept in step with them).
+    #
+    # LOQI_WEATHER_DEFAULT_CITY and LOQI_WEATHER_UNITS still work — they were
+    # always profile facts under a skill's name, so they alias onto the profile
+    # fields rather than living on as a second copy free to disagree.
+    user_name: str = ""
+    # Defaulted to this machine's city so a bare "what's the weather" answers
+    # without configuration. Anyone else cloning this should set LOQI_USER_CITY:
+    # the value is now told to the model as where the user lives, so a stale one
+    # is wrong in more places than the forecast.
+    user_city: str = Field(
+        "Indore",
+        validation_alias=AliasChoices("LOQI_USER_CITY", "LOQI_WEATHER_DEFAULT_CITY"),
+    )
+    units: Literal["metric", "imperial"] = Field(
+        "metric",
+        validation_alias=AliasChoices("LOQI_UNITS", "LOQI_WEATHER_UNITS"),
+    )
+    # Free text for anything worth knowing that isn't a field above ("computer
+    # science student", "works night shifts"). Unbounded here on purpose and
+    # truncated at the prompt instead — refusing to boot over a long note would
+    # leave a voice assistant with no way to say why it went quiet.
+    user_about: str = ""
+
     # -- Weather skill (Open-Meteo: free, keyless, non-commercial) ----------
-    # Place used when the utterance names none; picked from this machine's
-    # timezone. Override in .env if it isn't right for you:
-    #   LOQI_WEATHER_DEFAULT_CITY=Bengaluru
-    weather_default_city: str = "Delhi"
-    weather_units: Literal["metric", "imperial"] = "metric"
+    # The place to report on and the unit system come from the user profile.
     weather_cache_ttl_s: int = Field(600, ge=0)      # repeat asks hit the cache
     weather_request_timeout_s: float = Field(6.0, gt=0.0)
 
@@ -212,6 +246,7 @@ VAD_SILENCE_TIMEOUT_MS = settings.vad_silence_timeout_ms
 VAD_MIN_SPEECH_MS = settings.vad_min_speech_ms
 VAD_WAKE_TIMEOUT_MS = settings.vad_wake_timeout_ms
 VAD_CONFIRM_TIMEOUT_MS = settings.vad_confirm_timeout_ms
+VAD_MAX_UTTERANCE_MS = settings.vad_max_utterance_ms
 
 STT_MODEL_SIZE = settings.stt_model_size
 STT_DEVICE = settings.stt_device
@@ -222,8 +257,15 @@ TTS_LANG_CODE = settings.tts_lang_code
 TTS_VOICE = settings.tts_voice
 TTS_SAMPLE_RATE = settings.tts_sample_rate
 
-WEATHER_DEFAULT_CITY = settings.weather_default_city
-WEATHER_UNITS = settings.weather_units
+USER_NAME = settings.user_name
+USER_CITY = settings.user_city
+UNITS = settings.units
+USER_ABOUT = settings.user_about
+
+# The weather skill's place and units are the profile's, referenced not copied,
+# so there is no pair of values to keep in step.
+WEATHER_DEFAULT_CITY = settings.user_city
+WEATHER_UNITS = settings.units
 WEATHER_CACHE_TTL_S = settings.weather_cache_ttl_s
 WEATHER_REQUEST_TIMEOUT_S = settings.weather_request_timeout_s
 

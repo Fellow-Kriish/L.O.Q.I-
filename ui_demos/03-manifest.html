@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L.O.Q.I. UI — 3 of 3 — Manifest</title>
+<style data-harness>
+/* ===== inlined from _harness.css — edit that file, then run node _inline.js ===== */
+/* ==========================================================================
+   Shared demo harness — IDENTICAL across all three UI demos.
+
+   Purpose: isolate the variable. The faux desktop, the state controls, the
+   sample content and the page chrome are the same in every demo, so the only
+   thing that differs between files is the Loki UI itself. Nothing in this
+   file styles a Loki surface; each demo owns its own look entirely.
+   ========================================================================== */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #15171b;
+  color: #d6dae1;
+  font: 400 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ------------------------------------------------------------------ chrome */
+.brief {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 34px 28px 20px;
+}
+
+.brief-index {
+  font: 500 12px/1 "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color: #6d7480;
+  margin: 0 0 12px;
+}
+
+.brief h1 {
+  margin: 0 0 8px;
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: #f2f4f8;
+}
+
+.brief p {
+  margin: 0;
+  max-width: 62ch;
+  color: #9aa1ab;
+}
+
+.brief b { color: #c8cdd5; font-weight: 600; }
+
+/* --------------------------------------------------------------- the stage */
+.stage {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 28px 28px;
+}
+
+/* Faux Windows desktop. Exists so the overlay can be judged the way it will
+   actually be seen: floating over someone's work, never taking focus. */
+.desktop {
+  position: relative;
+  height: 430px;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 18% 8%, #2a3444 0%, transparent 58%),
+    radial-gradient(100% 80% at 88% 96%, #29313d 0%, transparent 60%),
+    linear-gradient(168deg, #1d232c 0%, #121519 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* A window behind the overlay, to test legibility and the focus rule. */
+.behind {
+  position: absolute;
+  inset: 26px 26px 92px;
+  border-radius: 7px;
+  background: rgba(14, 17, 21, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  padding: 15px 18px;
+  overflow: hidden;
+}
+
+.behind-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.behind-bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.behind pre {
+  margin: 0;
+  font: 400 12px/1.85 "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color: rgba(214, 218, 225, 0.30);
+  white-space: pre-wrap;
+}
+
+.behind pre b { color: rgba(214, 218, 225, 0.5); font-weight: 400; }
+
+.taskbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40px;
+  background: rgba(10, 12, 15, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.taskbar i {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.taskbar i:first-child { background: rgba(91, 157, 255, 0.34); }
+
+/* Anchor for the overlay: bottom-centre, above the taskbar, per spec §5.1. */
+.overlay-slot {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+}
+
+/* ------------------------------------------------------------- controls */
+.controls {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.controls-label {
+  font: 500 11px/1 "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color: #6d7480;
+  margin-right: 5px;
+}
+
+.controls button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.035);
+  color: #b3b9c2;
+  font: 400 12.5px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  padding: 7px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.controls button:hover {
+  background: rgba(255, 255, 255, 0.075);
+  color: #e8ebf0;
+}
+
+.controls button[aria-pressed="true"] {
+  background: #e8ebf0;
+  border-color: #e8ebf0;
+  color: #14161a;
+  font-weight: 600;
+}
+
+.controls button:focus-visible,
+.controls a:focus-visible {
+  outline: 2px solid #5b9dff;
+  outline-offset: 2px;
+}
+
+.controls .spacer { flex: 1 1 18px; }
+
+.controls .toggle {
+  border-style: dashed;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------- command window (§5.3) */
+.window {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 28px 60px;
+}
+
+.window-frame {
+  border-radius: 10px;
+  overflow: hidden;
+  background: #101318;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.window-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 9px 12px 0;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.window-tabs span {
+  padding: 8px 13px;
+  font-size: 12.5px;
+  color: #79808b;
+  border-radius: 6px 6px 0 0;
+}
+
+.window-tabs span[data-on] {
+  background: #101318;
+  color: #e8ebf0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.window-body { padding: 16px 18px 20px; }
+
+.window-note {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: #6d7480;
+  max-width: 70ch;
+}
+
+/* ------------------------------------------------------------ utilities */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .brief, .stage, .window { padding-left: 16px; padding-right: 16px; }
+  .desktop { height: 400px; }
+  .behind { inset: 16px 16px 86px; }
+}
+</style>
+<style>
+/* ==========================================================================
+   DEMO 3 — MANIFEST
+   Identity: the overlay is one row of a ledger. Six columns — mark, state,
+   route, tier, words, milliseconds — and they never move, at any state. The
+   Command Window is the same row, repeated and scrolled.
+   Type: one tabular sans throughout. Figures are lining and tabular so a
+   number changing never shifts the column beside it.
+   Bands, not rules: columns are separated by tone, which keeps this a ledger
+   without turning it into a newspaper.
+   Radius: 10px everywhere.
+   ========================================================================== */
+
+.m {
+  --ui: Aptos, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --r: 10px;
+  --c: #8A93A3;
+  --cols: 34px 78px 62px 54px minmax(0, 1fr) 76px;
+}
+
+/* --------------------------------------------------- the row (pill AND log) */
+.m-row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  font: 400 13.5px/1.34 var(--ui);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.m-row > * { padding: 0 10px; min-width: 0; }
+
+/* The two banded groups. Machine facts are toned back from human words. */
+.m-row > .m-route,
+.m-row > .m-tier { background: rgba(255, 255, 255, 0.028); }
+.m-row > .m-ms { background: rgba(255, 255, 255, 0.05); }
+
+.m-mark { padding-left: 12px !important; }
+.m-mark svg { display: block; color: var(--c); }
+
+.m-state {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-route, .m-tier {
+  font-size: 12px;
+  color: rgba(242, 244, 248, 0.52);
+  white-space: nowrap;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.m-route[data-route="groq"] { color: #B197FC; }
+.m-route[data-route="this pc"] { color: #5EEAD4; }
+.m-tier[data-tier="2"] { color: #FFC24D; font-weight: 600; }
+.m-tier[data-tier="3"] { color: #FF6B6B; font-weight: 600; }
+
+.m-words { color: #F2F4F8; }
+
+.m-words span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.m-words[data-voice="you"] { color: rgba(242, 244, 248, 0.66); }
+
+.m-ms {
+  text-align: right;
+  font-size: 14px;
+  color: #F2F4F8;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.m-ms u { text-decoration: none; font-size: 11px; color: rgba(242, 244, 248, 0.45); margin-left: 1px; }
+
+/* ------------------------------------------------------------------- pill */
+.m-pill {
+  position: relative;
+  width: var(--w, 38px);
+  height: var(--h, 10px);
+  border-radius: var(--r);
+  background: rgba(20, 22, 26, 0.97);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+    0 14px 36px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: width 240ms cubic-bezier(0.2, 0.9, 0.2, 1),
+              height 240ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+body[data-motion="off"] .m-pill { transition: none; }
+
+/* State colour as a keyline down the left edge — the one place colour is
+   allowed to be the whole message, because the state word sits beside it. */
+.m-pill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--c);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.m-pill:not([data-state="idle"])::after { opacity: 1; }
+
+.m-pill::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--c);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.m-pill[data-state="idle"]::before { opacity: 0.55; }
+
+.m-pill .m-row {
+  height: 100%;
+  opacity: 1;
+  transition: opacity 170ms ease 60ms;
+}
+
+.m-pill[data-state="idle"] .m-row { opacity: 0; transition-delay: 0ms; }
+
+/* Stop-heard acknowledgement, spec G3 — logged as a row like everything else. */
+.m-stopped {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 46px;
+  background: rgba(20, 22, 26, 0.97);
+  font: 600 13px/1 var(--ui);
+  color: #F2F4F8;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.m-stopped b { font-weight: 400; color: rgba(242, 244, 248, 0.5); margin-left: 9px; }
+.m-pill[data-stopped] .m-stopped { opacity: 1; }
+
+/* -------------------------------------------------------- confirm card §5.2 */
+.m-card {
+  width: 512px;
+  border-radius: var(--r);
+  background: rgba(20, 22, 26, 0.97);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 194, 77, 0.26),
+    0 18px 44px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  display: none;
+  position: relative;
+}
+
+.m-card[data-open] { display: block; }
+
+.m-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #FFC24D;
+}
+
+.m-card dl {
+  margin: 0;
+  padding: 14px 16px 4px 25px;
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  row-gap: 8px;
+  align-items: baseline;
+  font: 400 13.5px/1.4 var(--ui);
+}
+
+.m-card dt { color: rgba(242, 244, 248, 0.42); font-size: 12.5px; }
+.m-card dd { margin: 0; color: #F2F4F8; }
+.m-card dd.m-msg { color: #FFC24D; }
+.m-card dd b { font-weight: 600; }
+
+.m-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 16px 14px 25px;
+}
+
+.m-yes, .m-no {
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font: 600 13px/1 var(--ui);
+  cursor: pointer;
+}
+
+.m-yes { background: #FFC24D; color: #14161A; }
+.m-yes:hover { background: #ffcf6e; }
+
+.m-no {
+  background: rgba(255, 255, 255, 0.06);
+  color: #D6DAE1;
+  font-weight: 400;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13);
+}
+
+.m-no:hover { background: rgba(255, 255, 255, 0.11); }
+.m-yes:focus-visible, .m-no:focus-visible { outline: 2px solid #5B9DFF; outline-offset: 2px; }
+.m-key { font-weight: 400; font-size: 11px; opacity: 0.6; margin-left: 6px; }
+
+.m-voice {
+  margin-left: auto;
+  font: 400 12.5px/1 var(--ui);
+  color: rgba(242, 244, 248, 0.42);
+}
+
+/* The band depletes for the real ten seconds, so the deadline is visible
+   without reading the number. */
+.m-expiry {
+  height: 3px;
+  background: #FFC24D;
+  transform-origin: left;
+  transform: scaleX(1);
+}
+
+/* -------------------------------------------------- command window (§5.3) */
+.m-log { display: grid; }
+
+.m-log .m-head {
+  display: grid;
+  grid-template-columns: var(--cols);
+  font: 600 11.5px/1 var(--ui);
+  color: rgba(242, 244, 248, 0.3);
+  padding-bottom: 9px;
+}
+
+.m-log .m-head > * { padding: 0 10px; }
+.m-log .m-head > span:last-child { text-align: right; }
+
+.m-log .m-row {
+  border-radius: var(--r);
+  padding: 10px 0;
+  position: relative;
+}
+
+.m-log .m-row:hover { background: rgba(255, 255, 255, 0.032); }
+
+.m-log .m-row::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--c, transparent);
+}
+
+/* The live row: the pill, sitting in the log it belongs to. */
+.m-log .m-row[data-live] { background: rgba(91, 157, 255, 0.055); }
+
+.m-now {
+  font-size: 12.5px;
+  color: rgba(242, 244, 248, 0.34);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.m-log .m-when {
+  font-size: 12.5px;
+  color: rgba(242, 244, 248, 0.34);
+  white-space: nowrap;
+}
+
+/* Stage breakdown, spec G4 — a small table, because that is what it is. */
+.m-stages { margin-top: 22px; padding-top: 18px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055); }
+
+.m-stages h3 {
+  margin: 0 0 11px;
+  font: 600 12px/1 var(--ui);
+  color: rgba(242, 244, 248, 0.42);
+}
+
+.m-stage-row {
+  display: grid;
+  grid-template-columns: 96px 76px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  font: 400 13px/1.3 var(--ui);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.m-stage-row span:first-child { color: rgba(242, 244, 248, 0.6); }
+.m-stage-row b { font-weight: 400; color: #F2F4F8; text-align: right; }
+
+.m-stage-row i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sc, #5EEAD4);
+  min-width: 3px;
+}
+
+.m-stage-row u {
+  text-decoration: none;
+  text-align: right;
+  color: rgba(242, 244, 248, 0.4);
+  font-size: 12.5px;
+}
+
+@media (max-width: 720px) {
+  .m { --cols: 30px 68px 56px 46px minmax(0, 1fr); }
+  .m-log .m-head > span:last-child, .m-log .m-row > .m-ms, .m-log .m-row > .m-when { display: none; }
+  .m-stage-row { grid-template-columns: 76px 64px minmax(0, 1fr); }
+  .m-stage-row u { display: none; }
+}
+</style>
+</head>
+
+<body class="m">
+
+<header class="brief">
+  <div class="brief-index">Demo 3 of 3</div>
+  <h1>Manifest</h1>
+  <p class="brief-concept">The overlay is one row of a ledger: mark, state, route, tier, words,
+  milliseconds. <b>The columns never move</b> — not between states, not between turns — so your
+  eye learns one position for "did this leave my machine" and never hunts for it again. Scroll
+  the Command Window and you are reading the same row.</p>
+</header>
+
+<section class="stage">
+  <div class="desktop">
+    <div class="behind">
+      <div class="behind-bar"><i></i><i></i><i></i></div>
+      <pre></pre>
+    </div>
+
+    <div class="overlay-slot">
+      <div class="m-card" id="card" role="alertdialog" aria-labelledby="card-action">
+        <dl>
+          <dt>action</dt><dd id="card-action"><b>Send message</b></dd>
+          <dt>to</dt><dd id="card-to">Rahul</dd>
+          <dt>via</dt><dd id="card-app">WhatsApp</dd>
+          <dt>message</dt><dd class="m-msg" id="card-body"></dd>
+          <dt>tier</dt><dd>2 — needs your yes</dd>
+          <dt>undo</dt><dd id="card-undo">No, can't be unsent</dd>
+          <dt>expires</dt><dd id="card-expires">10s</dd>
+        </dl>
+        <div class="m-card-foot">
+          <button class="m-yes" type="button" id="yes">Send<span class="m-key">Enter</span></button>
+          <button class="m-no" type="button" id="no">Cancel<span class="m-key">Esc</span></button>
+          <span class="m-voice">or say “yes” / “cancel”</span>
+        </div>
+        <div class="m-expiry" id="expiry"></div>
+      </div>
+
+      <div class="m-pill" id="pill" data-state="idle">
+        <div class="m-row">
+          <span class="m-mark" id="mark" aria-hidden="true"></span>
+          <span class="m-state" id="state-word">Idle</span>
+          <span class="m-route" id="route"></span>
+          <span class="m-tier" id="tier"></span>
+          <span class="m-words" id="words"><span></span></span>
+          <span class="m-ms" id="ms"></span>
+        </div>
+        <div class="m-stopped">Stopped<b>you said “never mind”</b></div>
+      </div>
+    </div>
+
+    <div class="taskbar"><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="controls"><span class="controls-label">state</span></div>
+  <p class="sr-only" aria-live="polite"></p>
+</section>
+
+<section class="window">
+  <div class="window-frame">
+    <div class="window-tabs">
+      <span data-on>Timeline</span><span>Commands</span><span>Misses</span><span>Settings &amp; Health</span>
+    </div>
+    <div class="window-body">
+      <div class="m-log" id="log"></div>
+      <div class="m-stages">
+        <h3>Last turn, stage by stage</h3>
+        <div id="stages"></div>
+      </div>
+      <p class="window-note">The top row is the overlay you are looking at, in the log it will
+      end up in. <b>tier</b> is why a turn stopped to ask; <b>route</b> is whether the words left
+      this machine. Both stay in the same column whether you read them on the overlay or here.</p>
+    </div>
+  </div>
+</section>
+
+<script data-harness>
+/* ===== inlined from _harness.js — edit that file, then run node _inline.js ===== */
+/* ==========================================================================
+   Shared demo harness — IDENTICAL across all three UI demos.
+
+   Owns the state table (spec §6), the verified palette (§6), the sample
+   content (§5), the simulated amplitude signal, reduced-motion handling and
+   the state controls. Each demo supplies only its own render — so all three
+   animate from the very same signal and show the very same words, and the
+   only variable between the three files is the design itself.
+
+   Deliberately a classic script, not an ES module: these files are opened
+   straight off disk, and file:// blocks module imports.
+   ========================================================================== */
+
+(function (global) {
+  "use strict";
+
+  /* Contrast-verified against the #14161A pill surface, per spec §6. Not a
+     palette choice — a constraint all three demos inherit. */
+  const PALETTE = {
+    gray:   "#8A93A3",  // 5.85:1
+    blue:   "#5B9DFF",  // 6.65:1
+    violet: "#B197FC",  // 7.51:1
+    teal:   "#5EEAD4",  // 12.24:1
+    green:  "#4ADE80",  // 10.39:1
+    amber:  "#FFC24D",  // 11.28:1
+    red:    "#FF6B6B",  // 6.53:1
+    text:   "#F2F4F8",  // 16.45:1
+    surface: "#14161A",
+  };
+
+  /* Spec §6. `shape` exists because §6 forbids meaning carried by colour
+     alone: every state is also a distinct silhouette and a word. */
+  const STATES = {
+    idle:       { color: "gray",   shape: "dash",   motion: "none",  word: "Idle",       label: "" },
+    listening:  { color: "blue",   shape: "ring",   motion: "mic",   word: "Listening",  label: "open spotify" },
+    thinking:   { color: "violet", shape: "hollow", motion: "pulse", word: "Thinking",   label: "draft a note to Rahul" },
+    acting:     { color: "teal",   shape: "play",   motion: "step",  word: "Acting",     label: "Opening Spotify" },
+    confirming: { color: "amber",  shape: "square", motion: "none",  word: "Confirming", label: "Send this message?" },
+    speaking:   { color: "green",  shape: "bars",   motion: "tts",   word: "Speaking",   label: "Here's the draft. I'll read it out." },
+    error:      { color: "red",    shape: "cross",  motion: "none",  word: "Failed",     label: "Groq isn't answering." },
+    muted:      { color: "gray",   shape: "muted",  motion: "none",  word: "Mic off",    label: "" },
+  };
+
+  /* Spec G1 — every turn says whether it left the machine. */
+  const ROUTE = {
+    idle: null, muted: null, listening: null,
+    thinking: "cloud", speaking: "cloud", error: "cloud",
+    acting: "local", confirming: "local",
+  };
+
+  /* Spec G2 — tier drives the confirm gate, so it is never hidden. */
+  const TIER = {
+    idle: null, muted: null, listening: null, thinking: null,
+    acting: 1, confirming: 2, speaking: 0, error: 0,
+  };
+
+  const ORDER = ["idle", "listening", "thinking", "acting", "confirming", "speaking", "error", "muted"];
+
+  /* Spec §5.2 — the card states exactly what will happen, to whom, in the
+     words that will actually be sent. */
+  const CONFIRM = {
+    action: "Send message",
+    app: "WhatsApp",
+    to: "Rahul",
+    body: "Running 10 minutes late, start without me",
+    tier: 2,
+    reversible: "No — can't be unsent",
+    timeout: 10,
+  };
+
+  /* Spec §5.3 Timeline. Mixed routes, all four tiers, one cancel — so the
+     route badge, the tier chip and the failure copy all have real work. */
+  const TIMELINE = [
+    { time: "14:22:07", text: "what time is it",             route: "local", tier: 0, result: "It's 2:22 PM.",              ms: 310,  ok: true },
+    { time: "14:23:41", text: "open spotify",                route: "local", tier: 1, result: "Opened Spotify.",            ms: 486,  ok: true },
+    { time: "14:24:58", text: "set a timer for 10 minutes",   route: "local", tier: 1, result: "Timer set for 10 minutes.",  ms: 402,  ok: true },
+    { time: "14:26:12", text: "text Rahul I'm running late",  route: "local", tier: 2, result: "Sent to Rahul.",             ms: 5240, ok: true },
+    { time: "14:28:03", text: "why is my laptop fan loud",    route: "cloud", tier: 0, result: "Spoke 3 sentences.",         ms: 2870, ok: true },
+    { time: "14:31:20", text: "delete the build folder",      route: "local", tier: 3, result: "Cancelled at the confirm.",  ms: 9100, ok: false },
+  ];
+
+  /* Spec G4 — the per-stage breakdown. The sentence-gap bug in the TTS
+     pipeline was invisible without exactly these four numbers, so all three
+     demos surface them somewhere. */
+  const TIMING = [
+    { stage: "wake",    ms: 120 },
+    { stage: "record",  ms: 1740 },
+    { stage: "stt",     ms: 240 },
+    { stage: "route",   ms: 2 },
+    { stage: "llm",     ms: 610 },
+    { stage: "speak",   ms: 840 },
+  ];
+
+  const reduceMotion = global.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ------------------------------------------------------------------------
+     Amplitude engine
+
+     Stands in for real mic level and real TTS output level — the two signals
+     spec §6 requires the bars to be driven by. Shape matters: flat random
+     jitter reads instantly as a fake, so `mic` is speech bursts under a slow
+     envelope and `tts` is syllabic pulses under a phrase-length arc. Shared,
+     so no demo gets a flattering signal the others didn't.
+     ------------------------------------------------------------------------ */
+  function createSignal(historyLength) {
+    const history = new Float32Array(historyLength || 180);
+    let value = 0, envelope = 0, phase = 0, burst = 0, elapsed = 0;
+
+    function step(motion, dt) {
+      elapsed += dt;
+      phase += dt;
+
+      if (motion === "mic") {
+        burst -= dt;
+        if (burst <= 0) {                       // a new syllable cluster
+          burst = 0.22 + Math.random() * 0.42;
+          envelope = 0.28 + Math.random() * 0.72;
+        }
+        const jitter = 0.55 + Math.random() * 0.45;
+        value += (envelope * jitter - value) * Math.min(1, dt * 17);
+      } else if (motion === "tts") {
+        const syllable = Math.abs(Math.sin(phase * Math.PI * 5.1));
+        const arc = 0.55 + 0.45 * Math.sin(phase * 0.72);
+        value += (syllable * arc * 0.92 - value) * Math.min(1, dt * 21);
+      } else if (motion === "pulse") {
+        value = 0.12 + 0.09 * (0.5 + 0.5 * Math.sin(phase * 1.9));
+      } else if (motion === "step") {
+        value = 0.22;
+      } else {
+        value += (0 - value) * Math.min(1, dt * 9);
+      }
+
+      value = value < 0 ? 0 : value > 1 ? 1 : value;
+      history.copyWithin(0, 1);
+      history[history.length - 1] = value;
+      return value;
+    }
+
+    /* Reduced motion still needs a characteristic shape, just a still one. */
+    function freeze(motion) {
+      for (let i = 0; i < history.length; i++) {
+        const x = i / history.length;
+        if (motion === "mic") {
+          history[i] = 0.22 + 0.52 * Math.abs(Math.sin(x * 16)) * (0.5 + 0.5 * Math.sin(x * 3.4));
+        } else if (motion === "tts") {
+          history[i] = 0.30 + 0.44 * Math.abs(Math.sin(x * 27));
+        } else if (motion === "pulse") {
+          history[i] = 0.16;
+        } else {
+          history[i] = 0;
+        }
+      }
+      value = (motion === "mic" || motion === "tts") ? 0.56 : motion === "pulse" ? 0.16 : 0;
+      phase = 0.42;
+    }
+
+    return {
+      history, step, freeze,
+      get value() { return value; },
+      get elapsed() { return elapsed; },
+      resetClock() { elapsed = 0; },
+    };
+  }
+
+  /* ------------------------------------------------------------------------
+     Controls, keyboard and the frame loop
+     ------------------------------------------------------------------------ */
+  function mount(opts) {
+    const bar = document.querySelector(".controls");
+    const live = document.querySelector("[aria-live]");
+    const signal = createSignal();
+    let current = opts.initial || "listening";
+    let motionOn = !reduceMotion;
+
+    const buttons = ORDER.map(function (name) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.state = name;
+      b.textContent = STATES[name].word;
+      b.setAttribute("aria-pressed", String(name === current));
+      b.addEventListener("click", function () { select(name); });
+      bar.appendChild(b);
+      return b;
+    });
+
+    const spacer = document.createElement("span");
+    spacer.className = "spacer";
+    bar.appendChild(spacer);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "toggle";
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.textContent = "Motion on";
+    toggle.addEventListener("click", function () { setMotion(!motionOn); });
+    bar.appendChild(toggle);
+
+    function setMotion(on) {
+      motionOn = on;
+      toggle.textContent = on ? "Motion on" : "Motion off";
+      toggle.setAttribute("aria-pressed", String(!on));
+      document.body.dataset.motion = on ? "on" : "off";
+      if (!on) signal.freeze(STATES[current].motion);
+    }
+
+    function select(name) {
+      if (!STATES[name]) return;
+      current = name;
+      signal.resetClock();
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.state === name));
+      });
+      if (!motionOn) signal.freeze(STATES[name].motion);
+      if (live) live.textContent = STATES[name].word + (STATES[name].label ? ". " + STATES[name].label : "");
+      opts.onState(name, STATES[name]);
+    }
+
+    setMotion(motionOn);
+    select(current);
+
+    let last = performance.now();
+    requestAnimationFrame(function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (motionOn) signal.step(STATES[current].motion, dt);
+      opts.onFrame(signal, current, STATES[current], motionOn);
+      requestAnimationFrame(frame);
+    });
+
+    /* Spec §5.1: Esc stops, Enter confirms. Both are global, because the
+       overlay never takes keyboard focus from the window behind it. */
+    global.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && current !== "idle") {
+        e.preventDefault();
+        if (opts.onStop) opts.onStop(current);
+        select("idle");
+      } else if (e.key === "Enter" && current === "confirming") {
+        e.preventDefault();
+        if (opts.onConfirm) opts.onConfirm();
+      }
+    });
+
+    return {
+      select: select,
+      setMotion: setMotion,
+      get state() { return current; },
+      get motionOn() { return motionOn; },
+    };
+  }
+
+  /* Real countdown, so the 10-second auto-cancel in §5.2 is demonstrated
+     rather than described. */
+  function countdown(seconds, onTick, onExpire) {
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function loop(now) {
+      const left = seconds - (now - t0) / 1000;
+      if (left <= 0) { onTick(0); onExpire(); return; }
+      onTick(left);
+      raf = requestAnimationFrame(loop);
+    });
+    return function cancel() { cancelAnimationFrame(raf); };
+  }
+
+  /* Canvas sizing that survives DPI changes — spec §11 asks for 100/150/200%. */
+  function fitCanvas(canvas) {
+    const dpr = global.devicePixelRatio || 1;
+    const r = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width * dpr));
+    const h = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    return { ctx: canvas.getContext("2d"), w: w, h: h, dpr: dpr };
+  }
+
+  /* The window behind the overlay. Same content in all three, so legibility
+     over a real working window is judged on equal terms. */
+  function fauxCode() {
+    const pre = document.querySelector(".behind pre");
+    if (!pre) return;
+    pre.innerHTML =
+      '<b>def</b> speak_pipelined(self, sentence_iter, stop_event=<b>None</b>):\n' +
+      '    audio_q = queue.Queue(maxsize=3)\n' +
+      '\n' +
+      '    <b>def</b> _synth_worker():\n' +
+      '        <b>for</b> sentence <b>in</b> sentence_iter:\n' +
+      '            <b>if</b> stop_event.is_set():\n' +
+      '                <b>break</b>\n' +
+      '            audio_q.put((sentence, self._synth(sentence)))\n';
+  }
+
+  global.Loki = {
+    PALETTE: PALETTE, STATES: STATES, ROUTE: ROUTE, TIER: TIER, ORDER: ORDER,
+    CONFIRM: CONFIRM, TIMELINE: TIMELINE, TIMING: TIMING,
+    reduceMotion: reduceMotion,
+    createSignal: createSignal, mount: mount, countdown: countdown,
+    fitCanvas: fitCanvas, fauxCode: fauxCode,
+  };
+})(window);
+</script>
+<script>
+(function () {
+  "use strict";
+  var P = Loki.PALETTE;
+
+  /* 18×18 marks. Two of them are amplitude-bound — listening's dot swells
+     with mic level and speaking's bars follow the TTS output — which is the
+     only motion anywhere in this design. */
+  function mark(shape, amp) {
+    var a = amp || 0;
+    switch (shape) {
+      case "dash":
+        return '<rect x="2" y="8.2" width="14" height="1.6" rx="0.8" fill="currentColor"/>';
+      case "ring":
+        return '<circle cx="9" cy="9" r="7.6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".4"/>' +
+               '<circle cx="9" cy="9" r="' + (1.8 + a * 4.4).toFixed(2) + '" fill="currentColor"/>';
+      case "hollow":
+        return '<circle cx="9" cy="9" r="6.6" fill="none" stroke="currentColor" stroke-width="2"/>';
+      case "play":
+        return '<path d="M4.6 2.6 15 9 4.6 15.4Z" fill="currentColor"/>';
+      case "square":
+        return '<rect x="2.8" y="2.8" width="12.4" height="12.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="2"/>';
+      case "bars":
+        var h1 = 3 + a * 8, h2 = 5 + a * 12, h3 = 3.4 + a * 6.6;
+        return bar(2.2, h1) + bar(7.9, h2) + bar(13.6, h3);
+      case "cross":
+        return '<path d="M3.6 3.6 14.4 14.4M14.4 3.6 3.6 14.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+      case "muted":
+        return '<circle cx="9" cy="9" r="6.9" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/>' +
+               '<path d="M4.1 13.9 13.9 4.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>';
+    }
+    return "";
+  }
+
+  function bar(x, h) {
+    return '<rect x="' + x + '" y="' + (9 - h / 2).toFixed(2) + '" width="2.2" height="' +
+      h.toFixed(2) + '" rx="1.1" fill="currentColor"/>';
+  }
+
+  function svg(inner) {
+    return '<svg width="18" height="18" viewBox="0 0 18 18">' + inner + '</svg>';
+  }
+
+  /* The row is the same size in every state. That is the whole idea: a field
+     is always in the same place, so nothing has to be re-found. */
+  var ROW = [512, 56];
+
+  var ROUTE_WORD = { local: "this pc", cloud: "groq" };
+
+  var VOICE = {
+    listening: "you", thinking: "you",
+    acting: "loki", confirming: "loki", speaking: "loki", error: "loki", muted: "loki", idle: null,
+  };
+
+  var WORDS = {
+    idle: "",
+    listening: "open spotify…",
+    thinking: "draft a note to Rahul",
+    acting: "Opening Spotify",
+    confirming: "Send this message to Rahul?",
+    speaking: "Here's the draft. I'll read it out.",
+    error: "Groq isn't answering. Say “retry” or ask again.",
+    muted: "Mic off. Say nothing — I can't hear you.",
+  };
+
+  /* What the millisecond column is counting, per state. */
+  var MS = {
+    idle: null, listening: "live", thinking: "live", confirming: "live",
+    acting: 486, speaking: 840, error: 3000, muted: null,
+  };
+
+  var pill = document.getElementById("pill");
+  var markEl = document.getElementById("mark");
+  var stateWord = document.getElementById("state-word");
+  var routeEl = document.getElementById("route");
+  var tierEl = document.getElementById("tier");
+  var wordsEl = document.getElementById("words");
+  var msEl = document.getElementById("ms");
+  var card = document.getElementById("card");
+  var expiry = document.getElementById("expiry");
+  var expiresVal = document.getElementById("card-expires");
+
+  Loki.fauxCode();
+  document.getElementById("card-to").textContent = Loki.CONFIRM.to;
+  document.getElementById("card-app").textContent = Loki.CONFIRM.app;
+  document.getElementById("card-body").textContent = "“" + Loki.CONFIRM.body + "”";
+  document.getElementById("card-undo").textContent = Loki.CONFIRM.reversible;
+
+  var cancelTimer = null, stopFlash = null, shape = "dash";
+
+  function fmt(ms) {
+    return ms >= 1000
+      ? (ms / 1000).toFixed(ms >= 10000 ? 0 : 1) + '<u>s</u>'
+      : Math.round(ms) + '<u>ms</u>';
+  }
+
+  /* Mounted at the very bottom of this file, once the Command Window exists —
+     the first state change writes into its live row. */
+  var api;
+
+  var OPTS = {
+    initial: "listening",
+
+    onState: function (name, st) {
+      pill.dataset.state = name;
+      pill.style.setProperty("--c", P[st.color]);
+      pill.style.setProperty("--w", (name === "idle" ? 38 : ROW[0]) + "px");
+      pill.style.setProperty("--h", (name === "idle" ? 10 : ROW[1]) + "px");
+      shape = st.shape;
+      stateWord.textContent = st.word;
+      markEl.innerHTML = svg(mark(shape, 0));
+
+      var r = Loki.ROUTE[name];
+      routeEl.textContent = r ? ROUTE_WORD[r] : "—";
+      if (r) routeEl.dataset.route = ROUTE_WORD[r]; else delete routeEl.dataset.route;
+
+      var t = Loki.TIER[name];
+      tierEl.textContent = t == null ? "—" : "tier " + t;
+      if (t == null) delete tierEl.dataset.tier; else tierEl.dataset.tier = String(t);
+
+      wordsEl.dataset.voice = VOICE[name] || "";
+      wordsEl.firstElementChild.textContent = WORDS[name];
+
+      if (MS[name] === null) msEl.innerHTML = "—";
+      else if (MS[name] !== "live") msEl.innerHTML = fmt(MS[name]);
+
+      syncLiveRow(name, st);
+
+      if (cancelTimer) { cancelTimer(); cancelTimer = null; }
+      if (name === "confirming") {
+        card.setAttribute("data-open", "");
+        cancelTimer = Loki.countdown(Loki.CONFIRM.timeout,
+          function (left) {
+            expiry.style.transform = "scaleX(" + (left / Loki.CONFIRM.timeout) + ")";
+            expiresVal.textContent = Math.ceil(left) + "s";
+          },
+          function () { expiresVal.textContent = "expired — cancelled"; api.select("idle"); });
+      } else {
+        card.removeAttribute("data-open");
+      }
+    },
+
+    onStop: function () {
+      pill.setAttribute("data-stopped", "");
+      clearTimeout(stopFlash);
+      stopFlash = setTimeout(function () { pill.removeAttribute("data-stopped"); }, 700);
+    },
+
+    onConfirm: function () { api.select("acting"); },
+
+    onFrame: function (signal, name, st, motionOn) {
+      if (name === "idle") return;
+      if (shape === "ring" || shape === "bars") markEl.innerHTML = svg(mark(shape, signal.value));
+
+      /* Thinking dims instead of moving — waiting must never read as progress. */
+      markEl.style.opacity = (st.motion === "pulse" && motionOn)
+        ? (0.45 + 0.55 * (0.5 + 0.5 * Math.sin(signal.elapsed * 2.3))).toFixed(3)
+        : "1";
+
+      if (MS[name] === "live") {
+        msEl.innerHTML = fmt(signal.elapsed * 1000);
+        if (liveMs) liveMs.innerHTML = fmt(signal.elapsed * 1000);
+      }
+    },
+  };
+
+  document.getElementById("yes").addEventListener("click", function () { api.select("acting"); });
+  document.getElementById("no").addEventListener("click", function () { api.select("idle"); });
+
+  /* ---------------------------------------------------------- command window */
+  var log = document.getElementById("log");
+
+  var head = document.createElement("div");
+  head.className = "m-head";
+  head.innerHTML = "<span></span><span>state</span><span>route</span><span>tier</span>" +
+    "<span>words</span><span>took</span>";
+  log.appendChild(head);
+
+  /* The overlay, shown as the log row it is about to become. */
+  var liveRow = document.createElement("div");
+  liveRow.className = "m-row";
+  liveRow.setAttribute("data-live", "");
+  liveRow.innerHTML =
+    '<span class="m-now">now</span>' +
+    '<span class="m-state" id="live-state"></span>' +
+    '<span class="m-route" id="live-route"></span>' +
+    '<span class="m-tier" id="live-tier"></span>' +
+    '<span class="m-words" id="live-words"><span></span></span>' +
+    '<span class="m-ms" id="live-ms"></span>';
+  log.appendChild(liveRow);
+
+  var liveState = liveRow.querySelector("#live-state");
+  var liveRoute = liveRow.querySelector("#live-route");
+  var liveTier = liveRow.querySelector("#live-tier");
+  var liveWords = liveRow.querySelector("#live-words");
+  var liveMs = liveRow.querySelector("#live-ms");
+
+  function syncLiveRow(name, st) {
+    liveRow.style.setProperty("--c", P[st.color]);
+    liveState.style.color = P[st.color];
+    liveState.textContent = st.word;
+
+    var r = Loki.ROUTE[name];
+    liveRoute.textContent = r ? ROUTE_WORD[r] : "—";
+    if (r) liveRoute.dataset.route = ROUTE_WORD[r]; else delete liveRoute.dataset.route;
+
+    var t = Loki.TIER[name];
+    liveTier.textContent = t == null ? "—" : "tier " + t;
+    if (t == null) delete liveTier.dataset.tier; else liveTier.dataset.tier = String(t);
+
+    liveWords.dataset.voice = VOICE[name] || "";
+    liveWords.firstElementChild.textContent = WORDS[name] || "waiting for the wake word";
+    if (MS[name] === null) liveMs.innerHTML = "—";
+    else if (MS[name] !== "live") liveMs.innerHTML = fmt(MS[name]);
+  }
+
+  Loki.TIMELINE.slice().reverse().forEach(function (r) {
+    var row = document.createElement("div");
+    row.className = "m-row";
+    row.style.setProperty("--c", r.ok ? (r.route === "cloud" ? P.violet : P.teal) : P.red);
+    row.innerHTML =
+      '<span class="m-when">' + r.time.slice(0, 5) + '</span>' +
+      '<span class="m-state" style="color:' + (r.ok ? "rgba(242,244,248,.8)" : P.red) + '">' +
+        (r.ok ? "Done" : "Cancelled") + '</span>' +
+      '<span class="m-route" data-route="' + ROUTE_WORD[r.route] + '">' + ROUTE_WORD[r.route] + '</span>' +
+      '<span class="m-tier" data-tier="' + r.tier + '">tier ' + r.tier + '</span>' +
+      '<span class="m-words"><span>' + r.text + " — " + r.result + '</span></span>' +
+      '<span class="m-ms">' + fmt(r.ms) + '</span>';
+    log.appendChild(row);
+  });
+
+  var STAGE_COLOR = {
+    wake: P.gray, record: P.blue, stt: "#7FB2FF",
+    route: P.teal, llm: P.violet, speak: P.green,
+  };
+  var total = Loki.TIMING.reduce(function (s, x) { return s + x.ms; }, 0);
+  var maxMs = Loki.TIMING.reduce(function (m, x) { return Math.max(m, x.ms); }, 0);
+  var stages = document.getElementById("stages");
+
+  Loki.TIMING.forEach(function (x) {
+    var row = document.createElement("div");
+    row.className = "m-stage-row";
+    row.style.setProperty("--sc", STAGE_COLOR[x.stage]);
+    row.innerHTML =
+      '<span>' + x.stage + '</span>' +
+      '<b>' + fmt(x.ms) + '</b>' +
+      '<i style="width:' + Math.max(2, (x.ms / maxMs) * 100).toFixed(1) + '%"></i>' +
+      '<u>' + Math.round((x.ms / total) * 100) + '%</u>';
+    stages.appendChild(row);
+  });
+
+  var foot = document.createElement("div");
+  foot.className = "m-stage-row";
+  foot.innerHTML = '<span style="color:rgba(242,244,248,.4)">wake to answer</span><b>' +
+    fmt(total) + '</b><i style="background:none"></i><u></u>';
+  stages.appendChild(foot);
+
+  api = Loki.mount(OPTS);
+})();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ These tests pin that policy to the cases that actually went wrong on a real
 are monkeypatched.
 """
 
+import os
 import subprocess
 
 import pytest
@@ -126,6 +127,26 @@ def test_aliases_win_over_installed_apps(installed):
     assert match.source == "alias"
     assert match.command == "code"
     assert match.exact
+
+
+def test_per_user_aliases_track_the_current_profile():
+    """
+    Discord and Spotify install per user, under the *current* profile's AppData.
+    Their aliases are built from LOCALAPPDATA/APPDATA at import — never pinned
+    to one account's C:\\Users\\<name>. When the exe is missing there, the
+    alias is absent and the StartApps tier takes over instead of a dead path.
+    """
+    local = os.environ.get("LOCALAPPDATA")
+    if local and os.path.isfile(os.path.join(local, "Discord", "Update.exe")):
+        assert app_registry.APPS["discord"].startswith(local)
+    else:
+        assert "discord" not in app_registry.APPS
+
+    roaming = os.environ.get("APPDATA")
+    if roaming and os.path.isfile(os.path.join(roaming, "Spotify", "Spotify.exe")):
+        assert app_registry.APPS["spotify"].startswith(roaming)
+    else:
+        assert "spotify" not in app_registry.APPS
 
 
 def test_exact_installed_name_resolves(installed):

@@ -30,6 +30,7 @@ class Recorder:
         vad_aggressiveness: int = config.VAD_AGGRESSIVENESS,
         silence_timeout_ms: int = config.VAD_SILENCE_TIMEOUT_MS,
         min_speech_ms: int = config.VAD_MIN_SPEECH_MS,
+        max_utterance_ms: int = config.VAD_MAX_UTTERANCE_MS,
     ):
         self.sample_rate = sample_rate
         self.channels = channels
@@ -39,10 +40,14 @@ class Recorder:
 
         self.silence_timeout_ms = silence_timeout_ms
         self.min_speech_ms = min_speech_ms
+        self.max_utterance_ms = max_utterance_ms
 
         self.vad = webrtcvad.Vad(vad_aggressiveness)
         self._pa: pyaudio.PyAudio | None = None
-        self._stream = None
+        # Annotated rather than left to inference: bare `= None` infers the type
+        # as None, and every later assignment of a real stream then only passes
+        # because _open_stream is unannotated and so goes unchecked.
+        self._stream: pyaudio.Stream | None = None
 
     def _open_stream(self):
         """Open the PyAudio mic stream."""
@@ -104,11 +109,13 @@ class Recorder:
         frames: list[bytes] = []
         speech_started = False
         speech_frames = 0
+        speech_total = 0  # every frame the VAD called speech — the min_speech_ms gate
         silence_frames = 0
         total_frames = 0
         silence_threshold = int(self.silence_timeout_ms / self.chunk_ms)
         min_speech_threshold = int(self.min_speech_ms / self.chunk_ms)
         wake_timeout_frames = int(wake_timeout_ms / self.chunk_ms)
+        max_utterance_frames = int(self.max_utterance_ms / self.chunk_ms)
 
         # Ring buffer: keep the last 300ms of pre-speech audio
         # so we don't clip the beginning of the utterance
@@ -136,6 +143,7 @@ class Recorder:
                         # Require a few consecutive speech frames to avoid false starts
                         if speech_frames >= 3:
                             speech_started = True
+                            speech_total = speech_frames   # the onset frames were speech
                             # Flush pre-speech buffer so we don't clip the start
                             frames.extend(pre_speech_buffer)
                             print("  🎤 Listening...")
@@ -144,19 +152,41 @@ class Recorder:
                 else:
                     frames.append(chunk)
                     if is_speech:
+                        speech_total += 1
                         silence_frames = 0
                     else:
                         silence_frames += 1
 
-                    # Stop if enough silence after sufficient speech
-                    total_speech_frames = len(frames)
-                    if silence_frames >= silence_threshold and total_speech_frames >= min_speech_threshold:
+                    # Silence ends the utterance, full stop. Whether it held
+                    # enough speech to be worth transcribing is decided after
+                    # the loop: folding that test in here means a genuinely
+                    # short answer never satisfies it and the loop never exits.
+                    if silence_frames >= silence_threshold:
+                        break
+
+                    # Safety net. A mic emitting constant noise scores every
+                    # frame as speech, so silence_frames never climbs and the
+                    # break above never fires — an unbounded loop holding the
+                    # wake listener paused. Cap any single utterance.
+                    if len(frames) >= max_utterance_frames:
+                        print("  ⏱️  Maximum utterance length reached.")
                         break
 
         finally:
             self._close_stream()
 
         if not frames:
+            return b""
+
+        # The min_speech gate, measured in frames the VAD actually called
+        # speech. It used to be measured against len(frames), which counts the
+        # flushed pre-roll and every silent frame as well — so it was really a
+        # "how long did we record" test and passed on silence alone. A cough or
+        # a door slam trips the 3-frame onset but never accumulates real
+        # speech, and handing that to Whisper produces a confident hallucinated
+        # transcript rather than nothing.
+        if speech_total < min_speech_threshold:
+            print("  🔇 Too little speech — ignoring.")
             return b""
 
         # Package as WAV in memory

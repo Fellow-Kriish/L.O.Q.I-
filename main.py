@@ -26,9 +26,11 @@ import argparse
 import contextlib
 import threading
 import time
+import traceback
 
 import metrics
 import timers
+import user_profile
 from actions import ActionUnavailable, execute
 from barge_in import BargeInListener
 from confirm import confirm_action
@@ -49,6 +51,11 @@ def main():
     print("  ║    Local Operations & Query Interface          ║")
     print("  ╚═══════════════════════════════════════════════╝")
     print("=" * 60)
+    print()
+
+    # Echoed at startup because a profile that silently failed to load is
+    # otherwise invisible until an answer comes back subtly wrong hours later.
+    print(f"  👤 {user_profile.describe()}")
     print()
 
     # ------------------------------------------------------------------
@@ -158,36 +165,44 @@ def main():
                     continue
 
                 with metrics.turn() as t:
-                    # Pause wake word listener during interaction
+                    # Pause wake word listener during interaction. The resume
+                    # lives in the finally below, not at each exit point: an
+                    # exception mid-turn must never leave the listener paused,
+                    # or the assistant goes deaf to the wake word.
                     wake_listener.pause()
-
-                    # Acknowledgment
-                    with t.stage(metrics.ACK):
-                        speak("Yes?")
-
-                    # Record
-                    with t.stage(metrics.RECORD):
-                        wav_bytes = recorder.record()
-                    if not wav_bytes:
-                        print("  No audio captured.")
-                        wake_listener.resume()
-                        continue
-
-                    # Transcribe
-                    with t.stage(metrics.STT):
-                        text = stt.transcribe(wav_bytes)
-                    if not text:
+                    try:
+                        # Acknowledgment
                         with t.stage(metrics.ACK):
-                            speak("I didn't catch that.")
+                            speak("Yes?")
+
+                        # Record
+                        with t.stage(metrics.RECORD):
+                            wav_bytes = recorder.record()
+                        if not wav_bytes:
+                            print("  No audio captured.")
+                            continue
+
+                        # Transcribe
+                        with t.stage(metrics.STT):
+                            text = stt.transcribe(wav_bytes)
+                        if not text:
+                            with t.stage(metrics.ACK):
+                                speak("I didn't catch that.")
+                            continue
+                        print(f"  📝 You said: \"{text}\"")
+
+                        # Process command
+                        _process_command(text, speak, brain, recorder=recorder, stt=stt, tts=tts, turn=t)
+                    except Exception:
+                        # A component died mid-turn (mic dropped, TTS failed).
+                        # A crashed loop is silent death for a voice UI, so the
+                        # assistant apologizes and keeps listening instead.
+                        traceback.print_exc()
+                        speak("Something went wrong. Please try again.")
+                    finally:
+                        # Every exit from this turn — normal, continue, or
+                        # exception — hands the mic back to the wake listener.
                         wake_listener.resume()
-                        continue
-                    print(f"  📝 You said: \"{text}\"")
-
-                    # Process command
-                    _process_command(text, speak, brain, recorder=recorder, stt=stt, tts=tts, turn=t)
-
-                    # Resume wake word listening
-                    wake_listener.resume()
                     print(f"  ⏱️ {t.summary()}")
 
         except KeyboardInterrupt:

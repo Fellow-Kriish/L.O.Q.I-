@@ -35,6 +35,7 @@ from groq import (
 )
 
 import config
+import user_profile
 from logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -55,6 +56,7 @@ class Brain:
         model: str = config.GROQ_MODEL,
         backup_model: str = config.GROQ_BACKUP_MODEL,
         max_retries: int = config.GROQ_MAX_RETRIES,
+        system_prompt: str | None = None,
     ):
         if not api_key:
             log.warning(
@@ -66,6 +68,16 @@ class Brain:
         self.client = Groq(api_key=api_key, max_retries=max_retries) if api_key else None
         self.model = model
         self.backup_model = backup_model
+
+        # Persona plus the user's own facts, joined once here rather than per
+        # request: the profile is read from the environment at import and is
+        # fixed for the life of the process. Kept as two pieces in source — the
+        # persona is the contract every install shares, the profile block is the
+        # part that differs per machine — and joined at the one seam that would
+        # have to move if the profile ever became mutable.
+        if system_prompt is None:
+            system_prompt = config.GROQ_SYSTEM_PROMPT + user_profile.prompt_block()
+        self.system_prompt = system_prompt
 
         # Conversation history (last N turns).
         self.history: list[dict[str, str]] = []
@@ -153,7 +165,7 @@ class Brain:
         self.history.append({"role": "user", "content": text})
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history :]
-        return [{"role": "system", "content": config.GROQ_SYSTEM_PROMPT}, *self.history]
+        return [{"role": "system", "content": self.system_prompt}, *self.history]
 
     def _create(self, messages: list[dict[str, str]], stream: bool):
         """
