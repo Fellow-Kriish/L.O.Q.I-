@@ -34,7 +34,7 @@ class StateTests(unittest.TestCase):
 
     def test_preferences_validate_and_save(self):
         state = RuntimeState()
-        saved = []
+        saved: list[dict[str, bool]] = []
         state.save_preferences = saved.append
         state.update(soundCuesAvailable=True)
         state.command({'action': 'preferences', 'soundCues': True, 'showRequest': False, 'unknown': True})
