@@ -43,7 +43,7 @@ class RuntimeState:
     def snapshot(self):
         with self.lock:
             feedback = self.data['feedback']
-            if feedback and feedback['expiresAt'] <= time.time() * 1000:
+            if isinstance(feedback, dict) and feedback.get('expiresAt', 0) <= time.time() * 1000:
                 self.data['feedback'] = None
             return json.loads(json.dumps(self.data))
 
@@ -68,7 +68,12 @@ class RuntimeState:
             return
         try:
             import winsound
-            winsound.Beep(880 if boundary == 'start' else 540, 70)
+
+            beep = getattr(winsound, 'Beep', None)
+            if callable(beep):
+                beep(880 if boundary == 'start' else 540, 70)
+            else:
+                raise RuntimeError('winsound.Beep unavailable')
         except (ImportError, RuntimeError):
             self.update(soundCuesAvailable=False, soundCues=False)
 
@@ -102,8 +107,13 @@ class RuntimeState:
         if action == 'confirm':
             with self.lock:
                 pending = self.data['confirmation']
-                if pending and pending['expiresAt'] > time.time() * 1000 and message.get('id') == pending['id'] and isinstance(message.get('approved'), bool):
-                    self.answer = message['approved']
+                if (
+                    isinstance(pending, dict)
+                    and pending.get('expiresAt', 0) > time.time() * 1000
+                    and message.get('id') == pending.get('id')
+                    and isinstance(message.get('approved'), bool)
+                ):
+                    self.answer = bool(message['approved'])
                     self.data['confirmation'] = None
                     self.approval.set()
                     self.changed.set()

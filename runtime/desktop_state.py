@@ -3,6 +3,7 @@ import json
 import os
 import threading
 from pathlib import Path
+from typing import Any
 
 
 class Preferences:
@@ -42,13 +43,15 @@ def clamp_position(position, areas, width=360, height=120):
 
 def display_scale(window=None):
     try:
+        win_ctypes: Any = ctypes
         if window is not None and window.native:
             from ctypes import wintypes
-            get_dpi = ctypes.windll.user32.GetDpiForWindow
+
+            get_dpi = win_ctypes.windll.user32.GetDpiForWindow
             get_dpi.argtypes = [wintypes.HWND]
             get_dpi.restype = wintypes.UINT
             return max(1, get_dpi(window.native.Handle.ToInt64()) / 96)
-        return max(1, ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100)
+        return max(1, win_ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100)
     except (AttributeError, OSError):
         return 1
 
@@ -59,10 +62,11 @@ def work_areas():
     class MonitorInfo(ctypes.Structure):
         _fields_ = [('size', wintypes.DWORD), ('monitor', wintypes.RECT), ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
 
-    user32 = ctypes.windll.user32
+    win_ctypes: Any = ctypes
+    user32 = win_ctypes.windll.user32
     user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
-    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HANDLE, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
-    areas = []
+    callback_type = win_ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HANDLE, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+    areas: list[tuple[int, int, int, int]] = []
 
     def collect(handle, device, rectangle, context):
         info = MonitorInfo()
@@ -114,15 +118,18 @@ class GlobalShortcuts:
         self.thread.start()
 
     def stop(self):
+        win_ctypes: Any = ctypes
         if self.thread_id:
-            ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
+            win_ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
         if self.thread:
             self.thread.join(timeout=2)
 
     def run(self):
         from ctypes import wintypes
-        user32 = ctypes.windll.user32
-        self.thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
+
+        win_ctypes: Any = ctypes
+        user32 = win_ctypes.windll.user32
+        self.thread_id = win_ctypes.windll.kernel32.GetCurrentThreadId()
         registered = {}
         errors = []
         settings = {'toggle': os.environ.get('LOQI_SHORTCUT_TOGGLE', 'Ctrl+Alt+Space'), 'open': os.environ.get('LOQI_SHORTCUT_OPEN', 'Ctrl+Alt+L')}

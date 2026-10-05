@@ -133,6 +133,7 @@ class Recorder:
 
         try:
             self._open_stream()
+            assert self._stream is not None
             if runtime.data['soundCues'] and runtime.data['soundCuesAvailable']:
                 self._stream.stop_stream()
                 runtime.cue('start')
